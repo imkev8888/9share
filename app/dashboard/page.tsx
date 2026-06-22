@@ -92,8 +92,8 @@ export default async function OverviewPage({
       ) : (
         <>
           {/* Account + stats */}
-          <div className="grid gap-4 lg:grid-cols-3">
-            <div className="glass flex items-center gap-4 rounded-3xl p-5">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="glass flex items-center gap-4 rounded-3xl p-5 sm:col-span-2 lg:col-span-1">
               {account.profile_picture_url ? (
                 <Image
                   src={account.profile_picture_url}
@@ -155,7 +155,15 @@ export default async function OverviewPage({
 
           {/* Recent activity */}
           <div className="glass rounded-3xl p-5">
-            <h2 className="mb-4 font-bold text-ink">Recent activity</h2>
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="font-bold text-ink">Recent activity</h2>
+              <Link
+                href="/dashboard/tracking"
+                className="text-sm font-semibold text-brand-600 transition-colors duration-200 hover:text-brand-700 cursor-pointer"
+              >
+                View tracking →
+              </Link>
+            </div>
             {recent && recent.length > 0 ? (
               <ul className="divide-y divide-white/60">
                 {recent.map((log) => (

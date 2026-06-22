@@ -1,4 +1,5 @@
 import type { SVGProps } from "react";
+import Image from "next/image";
 
 const base = {
   fill: "none",
@@ -11,19 +12,17 @@ const base = {
 
 export function Logo({ className = "h-8 w-8" }: { className?: string }) {
   return (
-    <svg viewBox="0 0 40 40" className={className} aria-hidden="true">
-      <defs>
-        <linearGradient id="ninegrad" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" stopColor="#ec4899" />
-          <stop offset="100%" stopColor="#06b6d4" />
-        </linearGradient>
-      </defs>
-      <rect width="40" height="40" rx="12" fill="url(#ninegrad)" />
-      <path
-        d="M20 10c-3.6 0-6.4 2.7-6.4 6.1 0 3.3 2.6 5.7 6 5.7 1.3 0 2.4-.3 3.2-.9-.5 2.9-2.6 4.9-5.6 5.4-.8.1-1.3.8-1.2 1.6.1.8.8 1.3 1.6 1.2 4.9-.8 8.2-4.6 8.2-10.2 0-6-2.8-9.9-7.6-9.9h-.2zm-.1 3c2 0 3.3 1.4 3.3 3.2 0 1.7-1.3 2.9-3.1 2.9s-3.2-1.2-3.2-3 1.3-3.1 3-3.1z"
-        fill="white"
+    <span
+      className={`relative inline-flex shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-brand-100 ${className}`}
+    >
+      <Image
+        src="/logo.png"
+        alt="9share"
+        fill
+        sizes="40px"
+        className="object-contain p-1"
       />
-    </svg>
+    </span>
   );
 }
 
@@ -107,5 +106,41 @@ export const TrashIcon = (p: SVGProps<SVGSVGElement>) => (
 export const SparkIcon = (p: SVGProps<SVGSVGElement>) => (
   <svg {...base} {...p}>
     <path d="M12 3v3m0 12v3M3 12h3m12 0h3M5.6 5.6l2.1 2.1m8.6 8.6l2.1 2.1m0-12.8l-2.1 2.1M7.7 16.3l-2.1 2.1" />
+  </svg>
+);
+
+export const SheetIcon = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base} {...p}>
+    <rect x="3" y="3" width="18" height="18" rx="2" />
+    <line x1="3" y1="9" x2="21" y2="9" />
+    <line x1="3" y1="15" x2="21" y2="15" />
+    <line x1="12" y1="9" x2="12" y2="21" />
+  </svg>
+);
+
+export const ChevronDownIcon = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base} {...p}>
+    <polyline points="6 9 12 15 18 9" />
+  </svg>
+);
+
+export const SearchIcon = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base} {...p}>
+    <circle cx="11" cy="11" r="8" />
+    <line x1="21" y1="21" x2="16.65" y2="16.65" />
+  </svg>
+);
+
+export const SendIcon = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base} {...p}>
+    <line x1="22" y1="2" x2="11" y2="13" />
+    <polygon points="22 2 15 22 11 13 2 9 22 2" />
+  </svg>
+);
+
+export const ReplyIcon = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base} {...p}>
+    <polyline points="9 17 4 12 9 7" />
+    <path d="M20 18v-2a4 4 0 0 0-4-4H4" />
   </svg>
 );

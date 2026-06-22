@@ -2,7 +2,14 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { signOut } from "./actions";
-import { Logo, ChartIcon, BoltIcon, MessageIcon, LogoutIcon } from "@/components/icons";
+import {
+  Logo,
+  ChartIcon,
+  BoltIcon,
+  MessageIcon,
+  SheetIcon,
+  LogoutIcon,
+} from "@/components/icons";
 import { NavLink } from "@/components/nav-link";
 
 export default async function DashboardLayout({
@@ -36,6 +43,12 @@ export default async function DashboardLayout({
             icon={<BoltIcon className="h-5 w-5" />}
           >
             Automations
+          </NavLink>
+          <NavLink
+            href="/dashboard/tracking"
+            icon={<SheetIcon className="h-5 w-5" />}
+          >
+            Tracking
           </NavLink>
           <NavLink
             href="/dashboard/logs"
@@ -80,7 +93,7 @@ export default async function DashboardLayout({
         <main className="flex-1">{children}</main>
 
         {/* Mobile bottom nav */}
-        <nav className="glass sticky bottom-4 mt-6 flex items-center justify-around rounded-2xl p-2 md:hidden">
+        <nav className="glass sticky bottom-4 mt-6 flex items-center justify-around gap-1 rounded-2xl p-2 md:hidden">
           <NavLink href="/dashboard" icon={<ChartIcon className="h-5 w-5" />} mobile>
             Overview
           </NavLink>
@@ -90,6 +103,13 @@ export default async function DashboardLayout({
             mobile
           >
             Automations
+          </NavLink>
+          <NavLink
+            href="/dashboard/tracking"
+            icon={<SheetIcon className="h-5 w-5" />}
+            mobile
+          >
+            Tracking
           </NavLink>
           <NavLink
             href="/dashboard/logs"

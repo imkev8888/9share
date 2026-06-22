@@ -272,23 +272,6 @@ export function AutomationBuilder({
           </div>
         </div>
       </div>
-
-      <style>{`
-        .input {
-          width: 100%;
-          border-radius: 0.75rem;
-          border: 1px solid var(--color-brand-200);
-          background: #fff;
-          padding: 0.625rem 0.875rem;
-          color: #4a1733;
-          outline: none;
-          transition: border-color .2s, box-shadow .2s;
-        }
-        .input:focus {
-          border-color: var(--color-brand-500);
-          box-shadow: 0 0 0 2px var(--color-brand-200);
-        }
-      `}</style>
     </div>
   );
 }
