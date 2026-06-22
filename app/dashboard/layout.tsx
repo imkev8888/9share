@@ -92,6 +92,10 @@ export default async function DashboardLayout({
 
         <main className="flex-1">{children}</main>
 
+        <p className="mt-8 text-center text-xs text-ink-soft">
+          Created by Kelvin Ng with love.
+        </p>
+
         {/* Mobile bottom nav */}
         <nav className="glass sticky bottom-4 mt-6 flex items-center justify-around gap-1 rounded-2xl p-2 md:hidden">
           <NavLink href="/dashboard" icon={<ChartIcon className="h-5 w-5" />} mobile>

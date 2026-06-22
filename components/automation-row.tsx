@@ -72,7 +72,7 @@ export function AutomationRow({ automation }: { automation: Automation }) {
         </div>
       </div>
 
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center justify-end gap-2 sm:gap-3">
         {automation.media_permalink && (
           <a
             href={automation.media_permalink}
@@ -90,15 +90,14 @@ export function AutomationRow({ automation }: { automation: Automation }) {
           disabled={pending}
           role="switch"
           aria-checked={active}
-          className={`relative h-7 w-12 shrink-0 rounded-full transition-colors duration-200 cursor-pointer ${
-            active ? "bg-[var(--color-cyan-cta)]" : "bg-gray-300"
+          aria-label={active ? "Turn automation off" : "Turn automation on"}
+          className={`inline-flex h-9 min-w-20 shrink-0 items-center justify-center rounded-full px-3 text-sm font-bold transition-colors duration-200 cursor-pointer disabled:opacity-60 ${
+            active
+              ? "bg-[var(--color-cyan-cta)] text-white shadow-sm shadow-cyan-500/20"
+              : "bg-white text-ink-soft ring-1 ring-brand-100 hover:bg-brand-50"
           }`}
         >
-          <span
-            className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow transition-transform duration-200 ${
-              active ? "translate-x-6" : "translate-x-1"
-            }`}
-          />
+          {active ? "On" : "Off"}
         </button>
 
         <button
