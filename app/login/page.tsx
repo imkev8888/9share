@@ -28,7 +28,7 @@ export default async function LoginPage() {
             Welcome
           </h1>
           <p className="mb-6 text-center text-sm text-ink-soft">
-            My Chu CHu Mui
+            My Chu Chu Mui
           </p>
           <Suspense fallback={<div className="h-80" />}>
             <AuthForm />
