@@ -1,0 +1,211 @@
+import Link from "next/link";
+import Image from "next/image";
+import { createClient } from "@/lib/supabase/server";
+import { ConnectButton } from "@/components/connect-button";
+import { StatusPill } from "@/components/status-pill";
+import {
+  InstagramIcon,
+  BoltIcon,
+  MessageIcon,
+  CheckIcon,
+  PlusIcon,
+  TargetIcon,
+} from "@/components/icons";
+
+export default async function OverviewPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ connect?: string; reason?: string }>;
+}) {
+  const sp = await searchParams;
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  const { data: account } = await supabase
+    .from("instagram_accounts")
+    .select("*")
+    .eq("user_id", user!.id)
+    .maybeSingle();
+
+  const { count: activeCount } = await supabase
+    .from("automations")
+    .select("*", { count: "exact", head: true })
+    .eq("user_id", user!.id)
+    .eq("is_active", true);
+
+  const { count: sentCount } = await supabase
+    .from("automation_logs")
+    .select("*", { count: "exact", head: true })
+    .eq("user_id", user!.id)
+    .eq("status", "sent");
+
+  const { data: recent } = await supabase
+    .from("automation_logs")
+    .select("*")
+    .eq("user_id", user!.id)
+    .order("created_at", { ascending: false })
+    .limit(6);
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-2xl font-extrabold tracking-tight text-ink">
+          Overview
+        </h1>
+        <p className="text-sm text-ink-soft">
+          Welcome back — here&apos;s how your automations are doing.
+        </p>
+      </div>
+
+      {sp.connect === "success" && (
+        <div className="flex items-center gap-2 rounded-2xl border border-cyan-200 bg-cyan-50 px-4 py-3 text-sm font-medium text-cyan-800">
+          <CheckIcon className="h-4 w-4" /> Instagram connected successfully.
+        </div>
+      )}
+      {sp.connect === "error" && (
+        <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
+          Couldn&apos;t connect: {sp.reason || "unknown error"}
+        </div>
+      )}
+
+      {!account ? (
+        <div className="glass-strong rounded-3xl p-8 text-center sm:p-12">
+          <div className="mx-auto mb-5 inline-flex rounded-2xl bg-gradient-to-br from-brand-500 to-[var(--color-cyan-cta)] p-4 text-white">
+            <InstagramIcon className="h-8 w-8" />
+          </div>
+          <h2 className="text-xl font-extrabold text-ink">
+            Connect your Instagram
+          </h2>
+          <p className="mx-auto mt-2 max-w-md text-sm text-ink-soft">
+            One click — approve on Instagram and you&apos;re ready to automate.
+            We use the official API; no passwords or tokens needed.
+          </p>
+          <div className="mt-6">
+            <ConnectButton />
+          </div>
+          <p className="mt-4 text-xs text-ink-soft">
+            Requires an Instagram Business or Creator account.
+          </p>
+        </div>
+      ) : (
+        <>
+          {/* Account + stats */}
+          <div className="grid gap-4 lg:grid-cols-3">
+            <div className="glass flex items-center gap-4 rounded-3xl p-5">
+              {account.profile_picture_url ? (
+                <Image
+                  src={account.profile_picture_url}
+                  alt={account.username ?? "profile"}
+                  width={56}
+                  height={56}
+                  className="h-14 w-14 rounded-full object-cover"
+                />
+              ) : (
+                <div className="flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-brand-400 to-brand-600 text-white">
+                  <InstagramIcon className="h-6 w-6" />
+                </div>
+              )}
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <span className="truncate font-bold text-ink">
+                    @{account.username}
+                  </span>
+                  <span className="inline-flex items-center gap-1 rounded-full bg-cyan-100 px-2 py-0.5 text-[11px] font-semibold text-cyan-700">
+                    <CheckIcon className="h-3 w-3" /> Connected
+                  </span>
+                </div>
+                <p className="truncate text-xs text-ink-soft">
+                  {account.name ?? "Instagram account"}
+                </p>
+              </div>
+            </div>
+
+            <StatCard
+              icon={<BoltIcon className="h-5 w-5" />}
+              label="Active automations"
+              value={activeCount ?? 0}
+            />
+            <StatCard
+              icon={<MessageIcon className="h-5 w-5" />}
+              label="DMs sent"
+              value={sentCount ?? 0}
+            />
+          </div>
+
+          {/* Quick action */}
+          <Link
+            href="/dashboard/automations/new"
+            className="glass group flex items-center justify-between rounded-3xl p-5 transition-colors duration-200 hover:bg-white/85 cursor-pointer"
+          >
+            <div className="flex items-center gap-4">
+              <div className="inline-flex rounded-2xl bg-brand-500 p-3 text-white">
+                <PlusIcon className="h-5 w-5" />
+              </div>
+              <div>
+                <p className="font-bold text-ink">New automation</p>
+                <p className="text-sm text-ink-soft">
+                  Pick a post and set up its DM campaign
+                </p>
+              </div>
+            </div>
+            <span className="text-brand-500">→</span>
+          </Link>
+
+          {/* Recent activity */}
+          <div className="glass rounded-3xl p-5">
+            <h2 className="mb-4 font-bold text-ink">Recent activity</h2>
+            {recent && recent.length > 0 ? (
+              <ul className="divide-y divide-white/60">
+                {recent.map((log) => (
+                  <li
+                    key={log.id}
+                    className="flex items-center justify-between gap-3 py-3"
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium text-ink">
+                        @{log.commenter_username ?? "someone"}
+                      </p>
+                      <p className="truncate text-xs text-ink-soft">
+                        {log.comment_text ?? "—"}
+                      </p>
+                    </div>
+                    <StatusPill status={log.status} />
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <div className="flex flex-col items-center py-8 text-center">
+                <TargetIcon className="h-8 w-8 text-brand-300" />
+                <p className="mt-2 text-sm text-ink-soft">
+                  No DMs sent yet. Create an automation and watch it light up.
+                </p>
+              </div>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function StatCard({
+  icon,
+  label,
+  value,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: number;
+}) {
+  return (
+    <div className="glass rounded-3xl p-5">
+      <div className="mb-3 inline-flex rounded-xl bg-brand-50 p-2 text-brand-600">
+        {icon}
+      </div>
+      <p className="text-3xl font-extrabold text-ink">{value}</p>
+      <p className="text-sm text-ink-soft">{label}</p>
+    </div>
+  );
+}

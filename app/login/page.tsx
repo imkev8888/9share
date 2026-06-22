@@ -1,0 +1,43 @@
+import { Suspense } from "react";
+import Link from "next/link";
+import { redirect } from "next/navigation";
+import { AuthForm } from "@/components/auth-form";
+import { Logo } from "@/components/icons";
+import { createClient } from "@/lib/supabase/server";
+
+export default async function LoginPage() {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (user) redirect("/dashboard");
+
+  return (
+    <div className="flex min-h-screen items-center justify-center px-4 py-12">
+      <div className="w-full max-w-md">
+        <Link href="/" className="mb-8 flex items-center justify-center gap-2.5">
+          <Logo className="h-10 w-10" />
+          <span className="text-2xl font-extrabold tracking-tight text-ink">
+            9share
+          </span>
+        </Link>
+
+        <div className="glass-strong rounded-3xl p-7 sm:p-9">
+          <h1 className="mb-1 text-center text-2xl font-extrabold text-ink">
+            Welcome
+          </h1>
+          <p className="mb-6 text-center text-sm text-ink-soft">
+            Automate your Instagram DMs in minutes
+          </p>
+          <Suspense fallback={<div className="h-80" />}>
+            <AuthForm />
+          </Suspense>
+        </div>
+
+        <p className="mt-6 text-center text-xs text-ink-soft">
+          By continuing you agree to use Instagram&apos;s API responsibly.
+        </p>
+      </div>
+    </div>
+  );
+}
