@@ -3,6 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { AuthForm } from "@/components/auth-form";
 import { Logo } from "@/components/icons";
+import { LegalLinks } from "@/components/legal-links";
 import { createClient } from "@/lib/supabase/server";
 
 export default async function LoginPage() {
@@ -34,9 +35,12 @@ export default async function LoginPage() {
           </Suspense>
         </div>
 
-        <p className="mt-6 text-center text-xs text-ink-soft">
-          Created by Kelvin Ng with love.
-        </p>
+        <div className="mt-6 space-y-3 text-center">
+          <p className="text-xs text-ink-soft">
+            Created by Kelvin Ng with love.
+          </p>
+          <LegalLinks />
+        </div>
       </div>
     </div>
   );
