@@ -1,28 +1,26 @@
 import Link from "next/link";
-import { createClient } from "@/lib/supabase/server";
+import { requireUser } from "@/lib/auth";
 import { ConnectButton } from "@/components/connect-button";
 import { AutomationRow } from "@/components/automation-row";
 import { PlusIcon, BoltIcon } from "@/components/icons";
 
 export default async function AutomationsPage() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { supabase, user } = await requireUser();
 
-  const { data: account } = await supabase
-    .from("instagram_accounts")
-    .select("id")
-    .eq("user_id", user!.id)
-    .maybeSingle();
-
-  const { data: automations } = await supabase
-    .from("automations")
-    .select(
-      "id, name, keyword, dm_message, media_thumbnail, media_permalink, is_active, sent_count",
-    )
-    .eq("user_id", user!.id)
-    .order("created_at", { ascending: false });
+  const [{ data: account }, { data: automations }] = await Promise.all([
+    supabase
+      .from("instagram_accounts")
+      .select("id")
+      .eq("user_id", user.id)
+      .maybeSingle(),
+    supabase
+      .from("automations")
+      .select(
+        "id, name, keyword, dm_message, media_thumbnail, media_permalink, is_active, sent_count",
+      )
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false }),
+  ]);
 
   return (
     <div className="space-y-6">

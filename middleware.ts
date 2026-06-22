@@ -31,12 +31,15 @@ export async function middleware(request: NextRequest) {
     },
   );
 
+  // Keep middleware fast: this reads the auth cookie locally instead of making
+  // a Supabase Auth network call on every client-side route change. Server
+  // layouts/pages still use getUser() for the trusted auth check.
   const {
-    data: { user },
-  } = await supabase.auth.getUser();
+    data: { session },
+  } = await supabase.auth.getSession();
 
   const isDashboard = request.nextUrl.pathname.startsWith("/dashboard");
-  if (isDashboard && !user) {
+  if (isDashboard && !session) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     url.searchParams.set("next", request.nextUrl.pathname);

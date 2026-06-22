@@ -1,20 +1,16 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+import { requireUser } from "@/lib/auth";
 import { getMedia, type IgMedia } from "@/lib/instagram";
 import { ConnectButton } from "@/components/connect-button";
 import { AutomationBuilder } from "@/components/automation-builder";
 
 export default async function NewAutomationPage() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { supabase, user } = await requireUser();
 
   const { data: account } = await supabase
     .from("instagram_accounts")
     .select("id, access_token, username")
-    .eq("user_id", user!.id)
+    .eq("user_id", user.id)
     .maybeSingle();
 
   if (!account) {

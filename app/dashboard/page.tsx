@@ -1,6 +1,6 @@
 import Link from "next/link";
 import Image from "next/image";
-import { createClient } from "@/lib/supabase/server";
+import { requireUser } from "@/lib/auth";
 import { ConnectButton } from "@/components/connect-button";
 import { StatusPill } from "@/components/status-pill";
 import {
@@ -18,35 +18,36 @@ export default async function OverviewPage({
   searchParams: Promise<{ connect?: string; reason?: string }>;
 }) {
   const sp = await searchParams;
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { supabase, user } = await requireUser();
 
-  const { data: account } = await supabase
-    .from("instagram_accounts")
-    .select("*")
-    .eq("user_id", user!.id)
-    .maybeSingle();
-
-  const { count: activeCount } = await supabase
-    .from("automations")
-    .select("*", { count: "exact", head: true })
-    .eq("user_id", user!.id)
-    .eq("is_active", true);
-
-  const { count: sentCount } = await supabase
-    .from("automation_logs")
-    .select("*", { count: "exact", head: true })
-    .eq("user_id", user!.id)
-    .eq("status", "sent");
-
-  const { data: recent } = await supabase
-    .from("automation_logs")
-    .select("*")
-    .eq("user_id", user!.id)
-    .order("created_at", { ascending: false })
-    .limit(6);
+  const [
+    { data: account },
+    { count: activeCount },
+    { count: sentCount },
+    { data: recent },
+  ] = await Promise.all([
+    supabase
+      .from("instagram_accounts")
+      .select("*")
+      .eq("user_id", user.id)
+      .maybeSingle(),
+    supabase
+      .from("automations")
+      .select("*", { count: "exact", head: true })
+      .eq("user_id", user.id)
+      .eq("is_active", true),
+    supabase
+      .from("automation_logs")
+      .select("*", { count: "exact", head: true })
+      .eq("user_id", user.id)
+      .eq("status", "sent"),
+    supabase
+      .from("automation_logs")
+      .select("*")
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false })
+      .limit(6),
+  ]);
 
   return (
     <div className="space-y-6">
@@ -92,8 +93,8 @@ export default async function OverviewPage({
       ) : (
         <>
           {/* Account + stats */}
-          <div className="grid gap-4 lg:grid-cols-3">
-            <div className="glass flex items-center gap-4 rounded-3xl p-5">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="glass flex items-center gap-4 rounded-3xl p-5 sm:col-span-2 lg:col-span-1">
               {account.profile_picture_url ? (
                 <Image
                   src={account.profile_picture_url}
@@ -155,7 +156,15 @@ export default async function OverviewPage({
 
           {/* Recent activity */}
           <div className="glass rounded-3xl p-5">
-            <h2 className="mb-4 font-bold text-ink">Recent activity</h2>
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="font-bold text-ink">Recent activity</h2>
+              <Link
+                href="/dashboard/tracking"
+                className="text-sm font-semibold text-brand-600 transition-colors duration-200 hover:text-brand-700 cursor-pointer"
+              >
+                View tracking →
+              </Link>
+            </div>
             {recent && recent.length > 0 ? (
               <ul className="divide-y divide-white/60">
                 {recent.map((log) => (

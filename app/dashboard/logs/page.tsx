@@ -1,17 +1,14 @@
-import { createClient } from "@/lib/supabase/server";
+import { requireUser } from "@/lib/auth";
 import { StatusPill } from "@/components/status-pill";
 import { MessageIcon } from "@/components/icons";
 
 export default async function LogsPage() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { supabase, user } = await requireUser();
 
   const { data: logs } = await supabase
     .from("automation_logs")
     .select("*")
-    .eq("user_id", user!.id)
+    .eq("user_id", user.id)
     .order("created_at", { ascending: false })
     .limit(100);
 

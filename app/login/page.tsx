@@ -27,7 +27,7 @@ export default async function LoginPage() {
             Welcome
           </h1>
           <p className="mb-6 text-center text-sm text-ink-soft">
-            Automate your Instagram DMs in minutes
+            My Chu CHu Mui
           </p>
           <Suspense fallback={<div className="h-80" />}>
             <AuthForm />
@@ -35,7 +35,7 @@ export default async function LoginPage() {
         </div>
 
         <p className="mt-6 text-center text-xs text-ink-soft">
-          By continuing you agree to use Instagram&apos;s API responsibly.
+          Created by Kelvin Ng with love.
         </p>
       </div>
     </div>

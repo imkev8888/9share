@@ -72,7 +72,7 @@ export function AutomationRow({ automation }: { automation: Automation }) {
         </div>
       </div>
 
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center justify-end gap-3">
         {automation.media_permalink && (
           <a
             href={automation.media_permalink}
@@ -84,22 +84,28 @@ export function AutomationRow({ automation }: { automation: Automation }) {
           </a>
         )}
 
-        <button
-          type="button"
-          onClick={onToggle}
-          disabled={pending}
-          role="switch"
-          aria-checked={active}
-          className={`relative h-7 w-12 shrink-0 rounded-full transition-colors duration-200 cursor-pointer ${
-            active ? "bg-[var(--color-cyan-cta)]" : "bg-gray-300"
-          }`}
-        >
-          <span
-            className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow transition-transform duration-200 ${
-              active ? "translate-x-6" : "translate-x-1"
+        <div className="flex items-center gap-2 rounded-full bg-white/70 px-2.5 py-1.5 ring-1 ring-brand-100">
+          <span className="min-w-7 text-xs font-bold text-ink-soft">
+            {active ? "On" : "Off"}
+          </span>
+          <button
+            type="button"
+            onClick={onToggle}
+            disabled={pending}
+            role="switch"
+            aria-checked={active}
+            aria-label={active ? "Turn automation off" : "Turn automation on"}
+            className={`relative h-7 w-14 shrink-0 rounded-full transition-colors duration-200 cursor-pointer disabled:opacity-60 ${
+              active ? "bg-[var(--color-cyan-cta)]" : "bg-gray-300"
             }`}
-          />
-        </button>
+          >
+            <span
+              className={`absolute left-1 top-1 h-5 w-5 rounded-full bg-white shadow transition-transform duration-200 ${
+                active ? "translate-x-7" : "translate-x-0"
+              }`}
+            />
+          </button>
+        </div>
 
         <button
           type="button"

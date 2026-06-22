@@ -22,7 +22,7 @@ export function NavLink({
     return (
       <Link
         href={href}
-        className={`flex flex-1 flex-col items-center gap-1 rounded-xl py-2 text-xs font-semibold transition-colors duration-200 cursor-pointer ${
+        className={`flex flex-1 flex-col items-center gap-1 rounded-xl px-1 py-2 text-center text-[10px] font-semibold leading-none transition-colors duration-200 cursor-pointer ${
           active ? "bg-brand-500 text-white" : "text-ink-soft"
         }`}
       >

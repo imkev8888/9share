@@ -1,8 +1,14 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+import { requireUser } from "@/lib/auth";
 import { signOut } from "./actions";
-import { Logo, ChartIcon, BoltIcon, MessageIcon, LogoutIcon } from "@/components/icons";
+import {
+  Logo,
+  ChartIcon,
+  BoltIcon,
+  MessageIcon,
+  SheetIcon,
+  LogoutIcon,
+} from "@/components/icons";
 import { NavLink } from "@/components/nav-link";
 
 export default async function DashboardLayout({
@@ -10,11 +16,7 @@ export default async function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) redirect("/login");
+  const { user } = await requireUser();
 
   return (
     <div className="mx-auto flex min-h-screen max-w-7xl gap-6 px-4 py-6">
@@ -36,6 +38,12 @@ export default async function DashboardLayout({
             icon={<BoltIcon className="h-5 w-5" />}
           >
             Automations
+          </NavLink>
+          <NavLink
+            href="/dashboard/tracking"
+            icon={<SheetIcon className="h-5 w-5" />}
+          >
+            Tracking
           </NavLink>
           <NavLink
             href="/dashboard/logs"
@@ -79,8 +87,12 @@ export default async function DashboardLayout({
 
         <main className="flex-1">{children}</main>
 
+        <p className="mt-8 text-center text-xs text-ink-soft">
+          Created by Kelvin Ng with love.
+        </p>
+
         {/* Mobile bottom nav */}
-        <nav className="glass sticky bottom-4 mt-6 flex items-center justify-around rounded-2xl p-2 md:hidden">
+        <nav className="glass sticky bottom-4 mt-6 flex items-center justify-around gap-1 rounded-2xl p-2 md:hidden">
           <NavLink href="/dashboard" icon={<ChartIcon className="h-5 w-5" />} mobile>
             Overview
           </NavLink>
@@ -90,6 +102,13 @@ export default async function DashboardLayout({
             mobile
           >
             Automations
+          </NavLink>
+          <NavLink
+            href="/dashboard/tracking"
+            icon={<SheetIcon className="h-5 w-5" />}
+            mobile
+          >
+            Tracking
           </NavLink>
           <NavLink
             href="/dashboard/logs"
