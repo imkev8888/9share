@@ -159,23 +159,43 @@ export interface IgMedia {
   like_count?: number;
 }
 
-/** List the connected account's posts/reels so the user can pick one. */
-export async function getMedia(
+export interface IgMediaPage {
+  data: IgMedia[];
+  after?: string;
+}
+
+/** List one page of the connected account's posts/reels. */
+export async function getMediaPage(
   token: string,
   limit = 25,
-): Promise<IgMedia[]> {
+  after?: string | null,
+): Promise<IgMediaPage> {
   const params = new URLSearchParams({
     fields:
       "id,caption,media_type,media_product_type,media_url,thumbnail_url,permalink,timestamp,comments_count,like_count",
     limit: String(limit),
     access_token: token,
   });
+  if (after) params.set("after", after);
+
   const res = await fetch(
     `${GRAPH}/${GRAPH_VERSION}/me/media?${params.toString()}`,
   );
   const data = await res.json();
   if (!res.ok) throw new Error(`getMedia failed: ${JSON.stringify(data)}`);
-  return (data.data ?? []) as IgMedia[];
+  return {
+    data: (data.data ?? []) as IgMedia[],
+    after: data.paging?.cursors?.after,
+  };
+}
+
+/** List the connected account's first page of posts/reels. */
+export async function getMedia(
+  token: string,
+  limit = 25,
+): Promise<IgMedia[]> {
+  const page = await getMediaPage(token, limit);
+  return page.data;
 }
 
 /**
