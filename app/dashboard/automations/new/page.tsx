@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { requireUser } from "@/lib/auth";
-import { getMedia, type IgMedia } from "@/lib/instagram";
+import { getMediaPage, type IgMedia } from "@/lib/instagram";
 import { ConnectButton } from "@/components/connect-button";
 import { AutomationBuilder } from "@/components/automation-builder";
 
@@ -25,9 +25,12 @@ export default async function NewAutomationPage() {
   }
 
   let media: IgMedia[] = [];
+  let nextCursor: string | undefined;
   let loadError: string | null = null;
   try {
-    media = await getMedia(account.access_token, 30);
+    const page = await getMediaPage(account.access_token, 30);
+    media = page.data;
+    nextCursor = page.after;
   } catch (e) {
     loadError = e instanceof Error ? e.message : "Failed to load posts";
   }
@@ -71,6 +74,7 @@ export default async function NewAutomationPage() {
         <AutomationBuilder
           accountId={account.id}
           media={media}
+          nextCursor={nextCursor}
           usedMediaIds={Array.from(usedMediaIds)}
         />
       )}

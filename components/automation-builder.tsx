@@ -25,16 +25,21 @@ const TEMPLATES = [
 export function AutomationBuilder({
   accountId,
   media,
+  nextCursor,
   usedMediaIds,
 }: {
   accountId: string;
   media: IgMedia[];
+  nextCursor?: string;
   usedMediaIds: string[];
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const used = new Set(usedMediaIds);
 
+  const [mediaItems, setMediaItems] = useState(media);
+  const [cursor, setCursor] = useState(nextCursor);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [selected, setSelected] = useState<IgMedia | null>(null);
   const [name, setName] = useState("");
   const [keyword, setKeyword] = useState("");
@@ -56,20 +61,53 @@ export function AutomationBuilder({
     if (!dmMessage.trim()) return setError("Write the DM message.");
 
     startTransition(async () => {
-      const res = await createAutomation({
-        accountId,
-        igMediaId: selected.id,
-        mediaPermalink: selected.permalink,
-        mediaThumbnail: selected.thumbnail_url ?? selected.media_url,
-        mediaCaption: selected.caption,
-        name,
-        keyword,
-        dmMessage,
-        publicReply,
-      });
-      if (res?.error) setError(res.error);
-      else router.push("/dashboard/automations");
+      try {
+        const res = await createAutomation({
+          accountId,
+          igMediaId: selected.id,
+          mediaPermalink: selected.permalink,
+          mediaThumbnail: selected.thumbnail_url ?? selected.media_url,
+          mediaCaption: selected.caption,
+          name,
+          keyword,
+          dmMessage,
+          publicReply,
+        });
+        if (res?.error) setError(res.error);
+        else router.push("/dashboard/automations");
+      } catch {
+        setError("Could not save this automation. Please try again.");
+      }
     });
+  }
+
+  async function loadMore() {
+    if (!cursor || loadingMore) return;
+    setLoadingMore(true);
+    setError(null);
+
+    try {
+      const params = new URLSearchParams({ accountId, after: cursor });
+      const res = await fetch(`/api/instagram/media?${params.toString()}`);
+      const page = await res.json();
+
+      if (!res.ok) {
+        throw new Error(page.error || "Failed to load more posts.");
+      }
+
+      setMediaItems((current) => {
+        const existing = new Set(current.map((item) => item.id));
+        const fresh = (page.data as IgMedia[]).filter(
+          (item) => !existing.has(item.id),
+        );
+        return [...current, ...fresh];
+      });
+      setCursor(page.after);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to load more posts.");
+    } finally {
+      setLoadingMore(false);
+    }
   }
 
   const preview = dmMessage.replaceAll("{{username}}", "@maria_g");
@@ -86,52 +124,71 @@ export function AutomationBuilder({
             <h2 className="font-bold text-ink">Choose a post or reel</h2>
           </div>
 
-          {media.length === 0 ? (
+          {mediaItems.length === 0 ? (
             <p className="py-8 text-center text-sm text-ink-soft">
               No posts found on this account yet.
             </p>
           ) : (
-            <div className="grid max-h-[28rem] grid-cols-3 gap-2 overflow-y-auto pr-1 sm:grid-cols-4">
-              {media.map((m) => {
-                const thumb = m.thumbnail_url ?? m.media_url;
-                const isSel = selected?.id === m.id;
-                const isUsed = used.has(m.id);
-                return (
+            <>
+              <div className="grid max-h-[28rem] grid-cols-3 gap-2 overflow-y-auto pr-1 sm:grid-cols-4">
+                {mediaItems.map((m) => {
+                  const thumb = m.thumbnail_url ?? m.media_url;
+                  const isSel = selected?.id === m.id;
+                  const isUsed = used.has(m.id);
+                  return (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() => pick(m)}
+                      className={`group relative aspect-square overflow-hidden rounded-xl border-2 transition-colors duration-200 cursor-pointer ${
+                        isSel ? "border-brand-500" : "border-transparent"
+                      }`}
+                    >
+                      {thumb ? (
+                        <Image
+                          src={thumb}
+                          alt={m.caption?.slice(0, 30) ?? "post"}
+                          fill
+                          sizes="120px"
+                          className="object-cover"
+                        />
+                      ) : (
+                        <div className="flex h-full w-full items-center justify-center bg-brand-100 text-brand-400">
+                          <MessageIcon className="h-6 w-6" />
+                        </div>
+                      )}
+                      {isSel && (
+                        <span className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-brand-500 text-white">
+                          <CheckIcon className="h-3 w-3" />
+                        </span>
+                      )}
+                      {isUsed && !isSel && (
+                        <span className="absolute inset-x-0 bottom-0 bg-black/55 py-0.5 text-center text-[10px] font-semibold text-white">
+                          has automation
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="mt-4 flex justify-center">
+                {cursor ? (
                   <button
-                    key={m.id}
                     type="button"
-                    onClick={() => pick(m)}
-                    className={`group relative aspect-square overflow-hidden rounded-xl border-2 transition-colors duration-200 cursor-pointer ${
-                      isSel ? "border-brand-500" : "border-transparent"
-                    }`}
+                    onClick={loadMore}
+                    disabled={loadingMore}
+                    className="rounded-2xl border border-brand-200 bg-white px-5 py-2.5 text-sm font-bold text-brand-600 transition-colors duration-200 hover:bg-brand-50 disabled:opacity-60 cursor-pointer"
                   >
-                    {thumb ? (
-                      <Image
-                        src={thumb}
-                        alt={m.caption?.slice(0, 30) ?? "post"}
-                        fill
-                        sizes="120px"
-                        className="object-cover"
-                      />
-                    ) : (
-                      <div className="flex h-full w-full items-center justify-center bg-brand-100 text-brand-400">
-                        <MessageIcon className="h-6 w-6" />
-                      </div>
-                    )}
-                    {isSel && (
-                      <span className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-brand-500 text-white">
-                        <CheckIcon className="h-3 w-3" />
-                      </span>
-                    )}
-                    {isUsed && !isSel && (
-                      <span className="absolute inset-x-0 bottom-0 bg-black/55 py-0.5 text-center text-[10px] font-semibold text-white">
-                        has automation
-                      </span>
-                    )}
+                    {loadingMore ? "Loading more…" : "Load more posts"}
                   </button>
-                );
-              })}
-            </div>
+                ) : (
+                  <p className="text-xs font-medium text-ink-soft">
+                    All available posts loaded.
+                  </p>
+                )}
+              </div>
+            </>
           )}
         </div>
 
