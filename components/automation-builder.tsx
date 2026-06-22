@@ -48,11 +48,10 @@ export function AutomationBuilder({
   const [error, setError] = useState<string | null>(null);
 
   function pick(m: IgMedia) {
+    if (used.has(m.id)) return;
+
     setSelected(m);
-    if (!name) {
-      const caption = m.caption?.slice(0, 40) ?? "";
-      setName(caption ? `${caption}…` : "New campaign");
-    }
+    setName(formatCampaignName(m));
   }
 
   function save() {
@@ -121,7 +120,12 @@ export function AutomationBuilder({
             <span className="flex h-7 w-7 items-center justify-center rounded-full bg-brand-500 text-sm font-bold text-white">
               1
             </span>
-            <h2 className="font-bold text-ink">Choose a post or reel</h2>
+            <div>
+              <h2 className="font-bold text-ink">Choose a post or reel</h2>
+              <p className="text-xs text-ink-soft">
+                Posts that already have an automation are greyed out.
+              </p>
+            </div>
           </div>
 
           {mediaItems.length === 0 ? (
@@ -139,10 +143,18 @@ export function AutomationBuilder({
                     <button
                       key={m.id}
                       type="button"
+                      disabled={isUsed}
                       onClick={() => pick(m)}
-                      className={`group relative aspect-square overflow-hidden rounded-xl border-2 transition-colors duration-200 cursor-pointer ${
-                        isSel ? "border-brand-500" : "border-transparent"
-                      }`}
+                      className={`group relative h-28 overflow-hidden rounded-xl border-2 bg-brand-50 transition-colors duration-200 sm:aspect-square sm:h-auto ${
+                        isUsed
+                          ? "cursor-not-allowed border-transparent opacity-35 grayscale"
+                          : "cursor-pointer"
+                      } ${isSel ? "border-brand-500" : "border-transparent"}`}
+                      aria-label={
+                        isUsed
+                          ? "This post already has an automation"
+                          : "Choose this post"
+                      }
                     >
                       {thumb ? (
                         <Image
@@ -150,7 +162,7 @@ export function AutomationBuilder({
                           alt={m.caption?.slice(0, 30) ?? "post"}
                           fill
                           sizes="120px"
-                          className="object-cover"
+                          className="object-cover object-center"
                         />
                       ) : (
                         <div className="flex h-full w-full items-center justify-center bg-brand-100 text-brand-400">
@@ -162,9 +174,9 @@ export function AutomationBuilder({
                           <CheckIcon className="h-3 w-3" />
                         </span>
                       )}
-                      {isUsed && !isSel && (
-                        <span className="absolute inset-x-0 bottom-0 bg-black/55 py-0.5 text-center text-[10px] font-semibold text-white">
-                          has automation
+                      {isUsed && (
+                        <span className="absolute inset-x-0 bottom-0 bg-black/70 py-1 text-center text-[10px] font-semibold text-white">
+                          Already used
                         </span>
                       )}
                     </button>
@@ -331,6 +343,20 @@ export function AutomationBuilder({
       </div>
     </div>
   );
+}
+
+function formatCampaignName(media: IgMedia) {
+  const caption = media.caption?.replace(/\s+/g, " ").trim();
+  if (caption) return caption.length > 40 ? `${caption.slice(0, 40)}…` : caption;
+
+  const type =
+    media.media_product_type === "REELS"
+      ? "Reel"
+      : media.media_type === "VIDEO"
+        ? "Video"
+        : "Post";
+
+  return `${type} campaign`;
 }
 
 function Field({
