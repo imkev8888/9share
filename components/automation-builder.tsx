@@ -156,12 +156,12 @@ export function AutomationBuilder({
 
             <Field
               label="Trigger keyword (optional)"
-              hint="Leave empty to DM everyone who comments."
+              hint="Separate multiple triggers with commas. Leave empty to DM everyone."
             >
               <input
                 value={keyword}
                 onChange={(e) => setKeyword(e.target.value)}
-                placeholder="e.g. PRICE, LINK, ME"
+                placeholder="e.g. pm, dm, price"
                 className="input"
               />
             </Field>

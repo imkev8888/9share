@@ -110,10 +110,11 @@ async function handleComment(igAccountId: string, comment: CommentValue) {
     .maybeSingle();
   if (!automation) return;
 
-  // Optional keyword gate.
-  const keyword = (automation.keyword ?? "").trim().toLowerCase();
+  // Optional keyword gate. Users can enter multiple triggers separated by
+  // commas, semicolons, pipes, or new lines, e.g. "pm, dm, price".
+  const keywords = parseKeywords(automation.keyword);
   const text = (comment.text ?? "").toLowerCase();
-  if (keyword && !text.includes(keyword)) {
+  if (keywords.length > 0 && !keywords.some((keyword) => text.includes(keyword))) {
     await admin.from("automation_logs").insert({
       automation_id: automation.id,
       account_id: account.id,
@@ -123,7 +124,7 @@ async function handleComment(igAccountId: string, comment: CommentValue) {
       commenter_username: comment.from?.username ?? null,
       comment_text: comment.text ?? null,
       status: "skipped",
-      error: `keyword "${keyword}" not matched`,
+      error: `keywords "${keywords.join(", ")}" not matched`,
     });
     return;
   }
@@ -179,6 +180,13 @@ async function handleComment(igAccountId: string, comment: CommentValue) {
 function personalize(template: string, comment: CommentValue): string {
   const username = comment.from?.username ?? "there";
   return template.replaceAll("{{username}}", `@${username}`);
+}
+
+function parseKeywords(input: string | null | undefined): string[] {
+  return (input ?? "")
+    .split(/[,;\n|]+/)
+    .map((keyword) => keyword.trim().toLowerCase())
+    .filter(Boolean);
 }
 
 function verifySignature(raw: string, header: string | null): boolean {

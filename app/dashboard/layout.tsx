@@ -9,6 +9,7 @@ import {
   SheetIcon,
   LogoutIcon,
 } from "@/components/icons";
+import { LegalLinks } from "@/components/legal-links";
 import { NavLink } from "@/components/nav-link";
 
 export default async function DashboardLayout({
@@ -87,9 +88,12 @@ export default async function DashboardLayout({
 
         <main className="flex-1">{children}</main>
 
-        <p className="mt-8 text-center text-xs text-ink-soft">
-          Created by Kelvin Ng with love.
-        </p>
+        <footer className="mt-8 space-y-3 text-center">
+          <p className="text-xs text-ink-soft">
+            Created by Kelvin Ng with love.
+          </p>
+          <LegalLinks />
+        </footer>
 
         {/* Mobile bottom nav */}
         <nav className="glass sticky bottom-4 mt-6 flex items-center justify-around gap-1 rounded-2xl p-2 md:hidden">
