@@ -1,12 +1,9 @@
-import { createClient } from "@/lib/supabase/server";
+import { requireUser } from "@/lib/auth";
 import { TrackingBoard, type PostGroup } from "@/components/tracking-board";
 import { SheetIcon } from "@/components/icons";
 
 export default async function TrackingPage() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { supabase, user } = await requireUser();
 
   // Pull automations (the "posts") and every interaction in parallel.
   const [{ data: automations }, { data: logs }] = await Promise.all([
@@ -15,14 +12,14 @@ export default async function TrackingPage() {
       .select(
         "id, name, keyword, dm_message, public_reply, media_thumbnail, media_permalink, is_active, sent_count, created_at",
       )
-      .eq("user_id", user!.id)
+      .eq("user_id", user.id)
       .order("created_at", { ascending: false }),
     supabase
       .from("automation_logs")
       .select(
         "id, automation_id, commenter_username, comment_text, status, error, created_at",
       )
-      .eq("user_id", user!.id)
+      .eq("user_id", user.id)
       .order("created_at", { ascending: false })
       .limit(500),
   ]);
