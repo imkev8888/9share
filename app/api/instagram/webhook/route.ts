@@ -6,6 +6,29 @@ import { sendPrivateReply, replyToComment } from "@/lib/instagram";
 // Webhooks must run on Node (crypto) and never be cached.
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+// Allow time for the anti-spam delay below without the function timing out.
+export const maxDuration = 60;
+
+/* -------------------------------------------------------------------------- */
+/* Anti-spam safeguards                                                       */
+/* -------------------------------------------------------------------------- */
+// Instagram/Meta flag accounts that fire identical replies instantly, in big
+// bursts. To look human we wait a small randomized amount before each reply,
+// and cap how many DMs a single account sends per rolling hour. Both are
+// configurable via env so they can be tuned without a redeploy.
+const REPLY_DELAY_MIN_MS = Number(process.env.REPLY_DELAY_MIN_MS ?? 4000);
+const REPLY_DELAY_MAX_MS = Number(process.env.REPLY_DELAY_MAX_MS ?? 12000);
+const HOURLY_SEND_LIMIT = Number(process.env.HOURLY_SEND_LIMIT ?? 80);
+
+function randomDelayMs() {
+  const min = Math.max(0, REPLY_DELAY_MIN_MS);
+  const max = Math.max(min, REPLY_DELAY_MAX_MS);
+  return Math.round(min + Math.random() * (max - min));
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 /* -------------------------------------------------------------------------- */
 /* GET — Meta's webhook verification handshake                                */
@@ -137,6 +160,37 @@ async function handleComment(igAccountId: string, comment: CommentValue) {
     .eq("status", "sent")
     .maybeSingle();
   if (existing) return;
+
+  // Anti-spam rate limit: cap DMs per account over the last rolling hour so a
+  // viral post can't trigger a burst that Instagram reads as spam.
+  if (HOURLY_SEND_LIMIT > 0) {
+    const since = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    const { count: recentSends } = await admin
+      .from("automation_logs")
+      .select("id", { count: "exact", head: true })
+      .eq("account_id", account.id)
+      .eq("status", "sent")
+      .gte("created_at", since);
+
+    if ((recentSends ?? 0) >= HOURLY_SEND_LIMIT) {
+      await admin.from("automation_logs").insert({
+        automation_id: automation.id,
+        account_id: account.id,
+        user_id: account.user_id,
+        comment_id: comment.id,
+        commenter_id: comment.from?.id ?? null,
+        commenter_username: comment.from?.username ?? null,
+        comment_text: comment.text ?? null,
+        status: "skipped",
+        error: `hourly send limit (${HOURLY_SEND_LIMIT}) reached — skipped to avoid spam flags`,
+      });
+      return;
+    }
+  }
+
+  // Human-like pause before replying so we don't fire instantly on every
+  // comment (a common spam signal).
+  await sleep(randomDelayMs());
 
   const message = personalize(automation.dm_message, comment);
 
