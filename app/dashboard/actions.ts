@@ -29,23 +29,68 @@ export async function disconnectInstagram(accountId: string) {
   revalidatePath("/dashboard");
 }
 
-export interface AutomationInput {
-  accountId: string;
+export interface AutomationMediaInput {
   igMediaId: string;
   mediaPermalink?: string;
   mediaThumbnail?: string;
   mediaCaption?: string;
+}
+
+export interface AutomationInput extends AutomationMediaInput {
+  accountId: string;
   name: string;
   keyword?: string;
   dmMessage: string;
   publicReply?: string;
 }
 
+interface SharedCampaign {
+  name: string;
+  keyword?: string;
+  dmMessage: string;
+  publicReply?: string;
+}
+
+/** Create/update one automation for a single post. Kept for backward compat. */
 export async function createAutomation(input: AutomationInput) {
+  return createAutomations({
+    accountId: input.accountId,
+    media: [
+      {
+        igMediaId: input.igMediaId,
+        mediaPermalink: input.mediaPermalink,
+        mediaThumbnail: input.mediaThumbnail,
+        mediaCaption: input.mediaCaption,
+      },
+    ],
+    name: input.name,
+    keyword: input.keyword,
+    dmMessage: input.dmMessage,
+    publicReply: input.publicReply,
+  });
+}
+
+export interface CreateAutomationsInput {
+  accountId: string;
+  media: AutomationMediaInput[];
+  name: string;
+  keyword?: string;
+  dmMessage: string;
+  publicReply?: string;
+}
+
+/**
+ * Create/update an automation for each selected post/reel, applying the same
+ * campaign settings (keyword, DM, public reply) to all of them.
+ */
+export async function createAutomations(input: CreateAutomationsInput) {
   const { supabase, user } = await requireUser();
 
   if (!input.dmMessage?.trim()) {
     return { error: "DM message is required." };
+  }
+  if (!input.media?.length) {
+    return { error: "Pick at least one post or reel." };
   }
 
   const { data: account } = await supabase
@@ -59,26 +104,68 @@ export async function createAutomation(input: AutomationInput) {
     return { error: "Instagram account not found. Try reconnecting it." };
   }
 
+  const shared: SharedCampaign = {
+    name: input.name,
+    keyword: input.keyword,
+    dmMessage: input.dmMessage,
+    publicReply: input.publicReply,
+  };
+
+  let created = 0;
+  let firstError: string | null = null;
+
+  for (const media of input.media) {
+    if (!media.igMediaId) continue;
+    const res = await saveAutomation(
+      supabase,
+      user.id,
+      input.accountId,
+      media,
+      shared,
+    );
+    if (res.error) {
+      firstError = firstError ?? res.error;
+    } else {
+      created += 1;
+    }
+  }
+
+  revalidatePath("/dashboard/automations");
+  revalidatePath("/dashboard");
+
+  if (created === 0) {
+    return { error: firstError ?? "Could not save these automations." };
+  }
+  return { ok: true, created, failed: input.media.length - created };
+}
+
+async function saveAutomation(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  accountId: string,
+  media: AutomationMediaInput,
+  shared: SharedCampaign,
+) {
   const payload = {
-    user_id: user.id,
-    account_id: input.accountId,
-    ig_media_id: input.igMediaId,
-    media_permalink: nullableText(input.mediaPermalink),
-    media_thumbnail: nullableText(input.mediaThumbnail),
-    media_caption: nullableText(input.mediaCaption),
-    name: cleanText(input.name) || "Untitled campaign",
-    keyword: nullableText(input.keyword),
-    dm_message: cleanText(input.dmMessage),
-    public_reply: nullableText(input.publicReply),
+    user_id: userId,
+    account_id: accountId,
+    ig_media_id: media.igMediaId,
+    media_permalink: nullableText(media.mediaPermalink),
+    media_thumbnail: nullableText(media.mediaThumbnail),
+    media_caption: nullableText(media.mediaCaption),
+    name: cleanText(shared.name) || captionToName(media.mediaCaption),
+    keyword: nullableText(shared.keyword),
+    dm_message: cleanText(shared.dmMessage),
+    public_reply: nullableText(shared.publicReply),
     is_active: true,
   };
 
   const { data: existing, error: lookupError } = await supabase
     .from("automations")
     .select("id")
-    .eq("account_id", input.accountId)
-    .eq("ig_media_id", input.igMediaId)
-    .eq("user_id", user.id)
+    .eq("account_id", accountId)
+    .eq("ig_media_id", media.igMediaId)
+    .eq("user_id", userId)
     .maybeSingle();
 
   if (lookupError) return { error: formatDatabaseError(lookupError) };
@@ -88,13 +175,10 @@ export async function createAutomation(input: AutomationInput) {
         .from("automations")
         .update(payload)
         .eq("id", existing.id)
-        .eq("user_id", user.id)
+        .eq("user_id", userId)
     : await supabase.from("automations").insert(payload);
 
   if (error) return { error: formatDatabaseError(error) };
-
-  revalidatePath("/dashboard/automations");
-  revalidatePath("/dashboard");
   return { ok: true };
 }
 
@@ -121,6 +205,12 @@ export async function deleteAutomation(id: string) {
 
 function cleanText(value: string | null | undefined) {
   return (value ?? "").trim();
+}
+
+function captionToName(caption: string | null | undefined) {
+  const text = (caption ?? "").replace(/\s+/g, " ").trim();
+  if (!text) return "Untitled campaign";
+  return text.length > 40 ? `${text.slice(0, 40)}…` : text;
 }
 
 function nullableText(value: string | null | undefined) {

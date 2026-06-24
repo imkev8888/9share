@@ -3,7 +3,7 @@
 import Image from "next/image";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { createAutomation } from "@/app/dashboard/actions";
+import { createAutomations } from "@/app/dashboard/actions";
 import type { IgMedia } from "@/lib/instagram";
 import { CheckIcon, MessageIcon, SparkIcon } from "@/components/icons";
 
@@ -40,33 +40,52 @@ export function AutomationBuilder({
   const [mediaItems, setMediaItems] = useState(media);
   const [cursor, setCursor] = useState(nextCursor);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [selected, setSelected] = useState<IgMedia | null>(null);
+  const [selected, setSelected] = useState<IgMedia[]>([]);
   const [name, setName] = useState("");
+  const [nameEdited, setNameEdited] = useState(false);
   const [keyword, setKeyword] = useState("");
   const [dmMessage, setDmMessage] = useState("");
   const [publicReply, setPublicReply] = useState("");
   const [error, setError] = useState<string | null>(null);
 
+  const selectedIds = new Set(selected.map((m) => m.id));
+
   function pick(m: IgMedia) {
     if (used.has(m.id)) return;
+    setError(null);
 
-    setSelected(m);
-    setName(formatCampaignName(m));
+    const next = selectedIds.has(m.id)
+      ? selected.filter((s) => s.id !== m.id)
+      : [...selected, m];
+    setSelected(next);
+
+    // Smart default name: a single selection uses its caption; multiple
+    // selections leave it blank so each post keeps its own caption-based name.
+    if (!nameEdited) {
+      setName(next.length === 1 ? formatCampaignName(next[0]) : "");
+    }
+  }
+
+  function clearSelection() {
+    setSelected([]);
+    if (!nameEdited) setName("");
   }
 
   function save() {
     setError(null);
-    if (!selected) return setError("Pick a post first.");
+    if (selected.length === 0) return setError("Pick at least one post or reel.");
     if (!dmMessage.trim()) return setError("Write the DM message.");
 
     startTransition(async () => {
       try {
-        const res = await createAutomation({
+        const res = await createAutomations({
           accountId,
-          igMediaId: selected.id,
-          mediaPermalink: selected.permalink,
-          mediaThumbnail: selected.thumbnail_url ?? selected.media_url,
-          mediaCaption: selected.caption,
+          media: selected.map((m) => ({
+            igMediaId: m.id,
+            mediaPermalink: m.permalink,
+            mediaThumbnail: m.thumbnail_url ?? m.media_url,
+            mediaCaption: m.caption,
+          })),
           name,
           keyword,
           dmMessage,
@@ -75,7 +94,7 @@ export function AutomationBuilder({
         if (res?.error) setError(res.error);
         else router.push("/dashboard/automations");
       } catch {
-        setError("Could not save this automation. Please try again.");
+        setError("Could not save these automations. Please try again.");
       }
     });
   }
@@ -110,22 +129,35 @@ export function AutomationBuilder({
   }
 
   const preview = dmMessage.replaceAll("{{username}}", "@maria_g");
+  const count = selected.length;
 
   return (
     <div className="grid gap-6 lg:grid-cols-5">
-      {/* Step 1: pick post */}
+      {/* Step 1: pick posts */}
       <div className="lg:col-span-3 space-y-4">
         <div className="glass rounded-3xl p-5">
-          <div className="mb-4 flex items-center gap-2">
-            <span className="flex h-7 w-7 items-center justify-center rounded-full bg-brand-500 text-sm font-bold text-white">
-              1
-            </span>
-            <div>
-              <h2 className="font-bold text-ink">Choose a post or reel</h2>
-              <p className="text-xs text-ink-soft">
-                Posts that already have an automation are greyed out.
-              </p>
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-brand-500 text-sm font-bold text-white">
+                1
+              </span>
+              <div>
+                <h2 className="font-bold text-ink">Choose posts or reels</h2>
+                <p className="text-xs text-ink-soft">
+                  Select one or more. Greyed-out posts already have an
+                  automation.
+                </p>
+              </div>
             </div>
+            {count > 0 && (
+              <button
+                type="button"
+                onClick={clearSelection}
+                className="shrink-0 rounded-lg px-2.5 py-1 text-xs font-semibold text-ink-soft transition-colors duration-200 hover:bg-white/60 hover:text-ink cursor-pointer"
+              >
+                Clear ({count})
+              </button>
+            )}
           </div>
 
           {mediaItems.length === 0 ? (
@@ -137,7 +169,7 @@ export function AutomationBuilder({
               <div className="grid max-h-[28rem] grid-cols-3 gap-2 overflow-y-auto pr-1 sm:grid-cols-4">
                 {mediaItems.map((m) => {
                   const thumb = m.thumbnail_url ?? m.media_url;
-                  const isSel = selected?.id === m.id;
+                  const isSel = selectedIds.has(m.id);
                   const isUsed = used.has(m.id);
                   return (
                     <button
@@ -150,10 +182,11 @@ export function AutomationBuilder({
                           ? "cursor-not-allowed border-transparent opacity-35 grayscale"
                           : "cursor-pointer"
                       } ${isSel ? "border-brand-500" : "border-transparent"}`}
+                      aria-pressed={isSel}
                       aria-label={
                         isUsed
                           ? "This post already has an automation"
-                          : "Choose this post"
+                          : "Select this post"
                       }
                     >
                       {thumb ? (
@@ -210,15 +243,34 @@ export function AutomationBuilder({
             <span className="flex h-7 w-7 items-center justify-center rounded-full bg-brand-500 text-sm font-bold text-white">
               2
             </span>
-            <h2 className="font-bold text-ink">Set up the campaign</h2>
+            <div>
+              <h2 className="font-bold text-ink">Set up the campaign</h2>
+              {count > 1 && (
+                <p className="text-xs text-ink-soft">
+                  These settings apply to all {count} selected posts.
+                </p>
+              )}
+            </div>
           </div>
 
           <div className="space-y-4">
-            <Field label="Campaign name">
+            <Field
+              label="Campaign name"
+              hint={
+                count > 1
+                  ? "Leave empty to name each campaign from its own caption."
+                  : undefined
+              }
+            >
               <input
                 value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="Spring sale — Reel #3"
+                onChange={(e) => {
+                  setName(e.target.value);
+                  setNameEdited(true);
+                }}
+                placeholder={
+                  count > 1 ? "Optional shared name" : "Spring sale — Reel #3"
+                }
                 className="input"
               />
             </Field>
@@ -289,7 +341,11 @@ export function AutomationBuilder({
               disabled={pending}
               className="w-full rounded-2xl bg-[var(--color-cyan-cta)] py-3 font-bold text-white shadow-sm transition-colors duration-200 hover:bg-[var(--color-cyan-cta-dark)] disabled:opacity-60 cursor-pointer"
             >
-              {pending ? "Saving…" : "Activate automation"}
+              {pending
+                ? "Saving…"
+                : count > 1
+                  ? `Activate ${count} automations`
+                  : "Activate automation"}
             </button>
           </div>
         </div>
@@ -300,27 +356,46 @@ export function AutomationBuilder({
         <div className="glass-strong sticky top-6 rounded-3xl p-5">
           <h3 className="mb-4 text-sm font-bold text-ink">Live preview</h3>
 
-          {selected ? (
-            <div className="mb-4 flex items-center gap-3 rounded-2xl bg-brand-50 p-3">
-              <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded-lg">
-                {(selected.thumbnail_url ?? selected.media_url) && (
-                  <Image
-                    src={selected.thumbnail_url ?? selected.media_url!}
-                    alt=""
-                    fill
-                    sizes="48px"
-                    className="object-cover"
-                  />
+          {count === 0 ? (
+            <p className="mb-4 rounded-2xl bg-brand-50 p-3 text-xs text-ink-soft">
+              Pick one or more posts to see them here.
+            </p>
+          ) : (
+            <div className="mb-4 rounded-2xl bg-brand-50 p-3">
+              <p className="mb-2 text-xs font-semibold text-ink">
+                {count} {count === 1 ? "post" : "posts"} selected
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {selected.slice(0, 8).map((m) => {
+                  const thumb = m.thumbnail_url ?? m.media_url;
+                  return (
+                    <div
+                      key={m.id}
+                      className="relative h-10 w-10 shrink-0 overflow-hidden rounded-lg"
+                    >
+                      {thumb ? (
+                        <Image
+                          src={thumb}
+                          alt=""
+                          fill
+                          sizes="40px"
+                          className="object-cover"
+                        />
+                      ) : (
+                        <div className="flex h-full w-full items-center justify-center bg-brand-100 text-brand-400">
+                          <MessageIcon className="h-4 w-4" />
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+                {count > 8 && (
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-brand-100 text-xs font-bold text-brand-600">
+                    +{count - 8}
+                  </div>
                 )}
               </div>
-              <p className="line-clamp-2 text-xs text-ink-soft">
-                {selected.caption ?? "Selected post"}
-              </p>
             </div>
-          ) : (
-            <p className="mb-4 rounded-2xl bg-brand-50 p-3 text-xs text-ink-soft">
-              Pick a post to see it here.
-            </p>
           )}
 
           <div className="rounded-2xl bg-gradient-to-br from-white to-brand-50 p-4">
