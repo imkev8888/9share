@@ -366,6 +366,43 @@ async function saveFacebookAutomation(
   return { ok: true };
 }
 
+export interface UpdateAutomationInput {
+  id: string;
+  name: string;
+  keyword?: string;
+  dmMessage: string;
+  publicReply?: string;
+}
+
+/**
+ * Edit an automation's campaign content (name, keyword, DM, public reply).
+ * Allowed at any time — including while the automation is active.
+ */
+export async function updateAutomation(input: UpdateAutomationInput) {
+  const { supabase, user } = await requireUser();
+
+  if (!input.dmMessage?.trim()) {
+    return { error: "DM message is required." };
+  }
+
+  const { error } = await supabase
+    .from("automations")
+    .update({
+      name: cleanText(input.name) || "Untitled campaign",
+      keyword: nullableText(input.keyword),
+      dm_message: cleanText(input.dmMessage),
+      public_reply: nullableText(input.publicReply),
+    })
+    .eq("id", input.id)
+    .eq("user_id", user.id);
+
+  if (error) return { error: formatDatabaseError(error) };
+
+  revalidatePath("/dashboard/automations");
+  revalidatePath("/dashboard/tracking");
+  return { ok: true };
+}
+
 export async function toggleAutomation(id: string, isActive: boolean) {
   const { supabase, user } = await requireUser();
   await supabase

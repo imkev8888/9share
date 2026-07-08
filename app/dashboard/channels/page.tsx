@@ -164,10 +164,6 @@ export default async function ChannelsPage({
                   />
                 </div>
               ))}
-              <FacebookConnectButton
-                label="Connect another Page"
-                className="mt-2 w-full !py-2.5 text-sm"
-              />
             </div>
           ) : (
             <div className="rounded-2xl bg-white/60 p-4 text-center">
@@ -179,41 +175,6 @@ export default async function ChannelsPage({
             </div>
           )}
         </div>
-
-        {/* Coming soon */}
-        <ComingSoonCard
-          name="TikTok"
-          description="Comment automation for TikTok videos"
-        />
-        <ComingSoonCard
-          name="WhatsApp"
-          description="Automated replies on WhatsApp Business"
-        />
-      </div>
-    </div>
-  );
-}
-
-function ComingSoonCard({
-  name,
-  description,
-}: {
-  name: string;
-  description: string;
-}) {
-  return (
-    <div className="glass rounded-3xl p-5 opacity-55">
-      <div className="flex items-center gap-3">
-        <div className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-gray-200 text-lg font-extrabold text-gray-500">
-          {name.charAt(0)}
-        </div>
-        <div className="min-w-0 flex-1">
-          <h2 className="font-bold text-ink">{name}</h2>
-          <p className="text-xs text-ink-soft">{description}</p>
-        </div>
-        <span className="shrink-0 rounded-full bg-gray-100 px-2.5 py-1 text-[11px] font-semibold text-gray-500">
-          Coming soon
-        </span>
       </div>
     </div>
   );

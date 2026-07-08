@@ -22,7 +22,7 @@ export default async function AutomationsPage() {
       supabase
         .from("automations")
         .select(
-          "id, name, keyword, dm_message, media_thumbnail, media_permalink, is_active, sent_count, platform",
+          "id, name, keyword, dm_message, public_reply, media_thumbnail, media_permalink, is_active, sent_count, platform",
         )
         .eq("user_id", user.id)
         .order("created_at", { ascending: false }),

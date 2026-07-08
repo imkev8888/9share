@@ -17,25 +17,21 @@ export function FacebookPagePicker({ pages }: { pages: PickablePage[] }) {
   const [pending, startTransition] = useTransition();
 
   const selectable = pages.filter((p) => !p.alreadyConnected);
-  // Pre-check when the user manages exactly one connectable Page.
-  const [selected, setSelected] = useState<Set<string>>(
-    () => new Set(selectable.length === 1 ? [selectable[0].id] : []),
+  // One account can link exactly one Facebook Page. Pre-select when there's
+  // only one connectable Page.
+  const [selected, setSelected] = useState<string | null>(
+    () => (selectable.length === 1 ? selectable[0].id : null),
   );
   const [error, setError] = useState<string | null>(null);
 
-  function toggle(id: string) {
+  function pick(id: string) {
     setError(null);
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
+    setSelected((prev) => (prev === id ? null : id));
   }
 
   function connect() {
-    if (selected.size === 0) {
-      setError("Pick at least one Page.");
+    if (!selected) {
+      setError("Pick a Page.");
       return;
     }
     startTransition(async () => {
@@ -43,17 +39,17 @@ export function FacebookPagePicker({ pages }: { pages: PickablePage[] }) {
         const res = await fetch("/api/facebook/pages", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ pageIds: Array.from(selected) }),
+          body: JSON.stringify({ pageIds: [selected] }),
         });
         const data = await res.json();
         if (!res.ok) {
-          setError(data.error || "Could not connect the selected Pages.");
+          setError(data.error || "Could not connect the selected Page.");
           return;
         }
         router.push("/dashboard/channels?connect=facebook_success");
         router.refresh();
       } catch {
-        setError("Could not connect the selected Pages. Please try again.");
+        setError("Could not connect the selected Page. Please try again.");
       }
     });
   }
@@ -62,14 +58,14 @@ export function FacebookPagePicker({ pages }: { pages: PickablePage[] }) {
     <div className="glass-strong rounded-3xl p-5 sm:p-6">
       <ul className="divide-y divide-white/60">
         {pages.map((page) => {
-          const isSel = selected.has(page.id);
+          const isSel = selected === page.id;
           const disabled = page.alreadyConnected;
           return (
             <li key={page.id}>
               <button
                 type="button"
                 disabled={disabled}
-                onClick={() => toggle(page.id)}
+                onClick={() => pick(page.id)}
                 aria-pressed={isSel}
                 className={`flex w-full items-center gap-4 rounded-2xl px-3 py-3.5 text-left transition-colors duration-200 ${
                   disabled
@@ -122,14 +118,10 @@ export function FacebookPagePicker({ pages }: { pages: PickablePage[] }) {
       <button
         type="button"
         onClick={connect}
-        disabled={pending || selected.size === 0}
+        disabled={pending || !selected}
         className="mt-4 w-full rounded-2xl bg-[#1877F2] py-3 font-bold text-white shadow-sm transition-opacity duration-200 hover:opacity-90 disabled:opacity-60 cursor-pointer"
       >
-        {pending
-          ? "Connecting…"
-          : selected.size > 1
-            ? `Connect ${selected.size} Pages`
-            : "Connect"}
+        {pending ? "Connecting…" : "Connect"}
       </button>
     </div>
   );
