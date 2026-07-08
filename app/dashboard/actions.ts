@@ -27,6 +27,35 @@ export async function disconnectInstagram(accountId: string) {
     .eq("id", accountId)
     .eq("user_id", user.id);
   revalidatePath("/dashboard");
+  revalidatePath("/dashboard/channels");
+}
+
+export async function disconnectFacebookPage(pageId: string) {
+  const { supabase, user } = await requireUser();
+
+  const { data: page } = await supabase
+    .from("facebook_pages")
+    .select("page_id, page_access_token")
+    .eq("id", pageId)
+    .eq("user_id", user.id)
+    .maybeSingle();
+
+  if (page) {
+    // Best effort — stop webhook deliveries for this Page.
+    const { unsubscribePageFromWebhooks } = await import("@/lib/facebook");
+    await unsubscribePageFromWebhooks(
+      page.page_id,
+      page.page_access_token,
+    ).catch(() => {});
+  }
+
+  await supabase
+    .from("facebook_pages")
+    .delete()
+    .eq("id", pageId)
+    .eq("user_id", user.id);
+  revalidatePath("/dashboard");
+  revalidatePath("/dashboard/channels");
 }
 
 export interface AutomationMediaInput {
@@ -165,6 +194,161 @@ async function saveAutomation(
     .select("id")
     .eq("account_id", accountId)
     .eq("ig_media_id", media.igMediaId)
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (lookupError) return { error: formatDatabaseError(lookupError) };
+
+  const { error } = existing
+    ? await supabase
+        .from("automations")
+        .update(payload)
+        .eq("id", existing.id)
+        .eq("user_id", userId)
+    : await supabase.from("automations").insert(payload);
+
+  if (error) return { error: formatDatabaseError(error) };
+  return { ok: true };
+}
+
+export interface FacebookPostInput {
+  /** Our facebook_pages row id (uuid), not the raw Facebook Page id. */
+  pageId: string;
+  postId: string;
+  permalink?: string;
+  thumbnail?: string;
+  caption?: string;
+}
+
+export interface CreateCampaignInput {
+  name: string;
+  keyword?: string;
+  dmMessage: string;
+  publicReply?: string;
+  instagram?: { accountId: string; media: AutomationMediaInput[] };
+  facebook?: { posts: FacebookPostInput[] };
+}
+
+/**
+ * Multi-channel campaign: creates one automation per selected Instagram post
+ * and/or Facebook Page post, all sharing the same keyword/DM/public reply.
+ */
+export async function createCampaign(input: CreateCampaignInput) {
+  const { supabase, user } = await requireUser();
+
+  if (!input.dmMessage?.trim()) {
+    return { error: "DM message is required." };
+  }
+
+  const igMedia = input.instagram?.media ?? [];
+  const fbPosts = input.facebook?.posts ?? [];
+  if (igMedia.length === 0 && fbPosts.length === 0) {
+    return { error: "Pick at least one post." };
+  }
+
+  const shared: SharedCampaign = {
+    name: input.name,
+    keyword: input.keyword,
+    dmMessage: input.dmMessage,
+    publicReply: input.publicReply,
+  };
+
+  let created = 0;
+  let attempted = 0;
+  let firstError: string | null = null;
+
+  if (igMedia.length > 0) {
+    const accountId = input.instagram!.accountId;
+    const { data: account } = await supabase
+      .from("instagram_accounts")
+      .select("id")
+      .eq("id", accountId)
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    if (!account) {
+      firstError = "Instagram account not found. Try reconnecting it.";
+    } else {
+      for (const media of igMedia) {
+        if (!media.igMediaId) continue;
+        attempted += 1;
+        const res = await saveAutomation(
+          supabase,
+          user.id,
+          accountId,
+          media,
+          shared,
+        );
+        if (res.error) firstError = firstError ?? res.error;
+        else created += 1;
+      }
+    }
+  }
+
+  if (fbPosts.length > 0) {
+    // Verify every referenced Page belongs to this user.
+    const { data: pages } = await supabase
+      .from("facebook_pages")
+      .select("id")
+      .eq("user_id", user.id);
+    const ownedPageIds = new Set((pages ?? []).map((p) => p.id));
+
+    for (const post of fbPosts) {
+      if (!post.postId) continue;
+      attempted += 1;
+      if (!ownedPageIds.has(post.pageId)) {
+        firstError =
+          firstError ?? "Facebook Page not found. Try reconnecting it.";
+        continue;
+      }
+      const res = await saveFacebookAutomation(
+        supabase,
+        user.id,
+        post,
+        shared,
+      );
+      if (res.error) firstError = firstError ?? res.error;
+      else created += 1;
+    }
+  }
+
+  revalidatePath("/dashboard/automations");
+  revalidatePath("/dashboard");
+
+  if (created === 0) {
+    return { error: firstError ?? "Could not save these automations." };
+  }
+  return { ok: true, created, failed: attempted - created };
+}
+
+async function saveFacebookAutomation(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  post: FacebookPostInput,
+  shared: SharedCampaign,
+) {
+  // ig_media_id doubles as the post id column for Facebook rows.
+  const payload = {
+    user_id: userId,
+    platform: "facebook",
+    account_id: null,
+    fb_page_id: post.pageId,
+    ig_media_id: post.postId,
+    media_permalink: nullableText(post.permalink),
+    media_thumbnail: nullableText(post.thumbnail),
+    media_caption: nullableText(post.caption),
+    name: cleanText(shared.name) || captionToName(post.caption),
+    keyword: nullableText(shared.keyword),
+    dm_message: cleanText(shared.dmMessage),
+    public_reply: nullableText(shared.publicReply),
+    is_active: true,
+  };
+
+  const { data: existing, error: lookupError } = await supabase
+    .from("automations")
+    .select("id")
+    .eq("fb_page_id", post.pageId)
+    .eq("ig_media_id", post.postId)
     .eq("user_id", userId)
     .maybeSingle();
 

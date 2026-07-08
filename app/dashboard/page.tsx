@@ -5,6 +5,7 @@ import { ConnectButton } from "@/components/connect-button";
 import { StatusPill } from "@/components/status-pill";
 import {
   InstagramIcon,
+  FacebookIcon,
   BoltIcon,
   MessageIcon,
   CheckIcon,
@@ -22,6 +23,7 @@ export default async function OverviewPage({
 
   const [
     { data: account },
+    { data: fbPages },
     { count: activeCount },
     { count: sentCount },
     { data: recent },
@@ -31,6 +33,10 @@ export default async function OverviewPage({
       .select("*")
       .eq("user_id", user.id)
       .maybeSingle(),
+    supabase
+      .from("facebook_pages")
+      .select("id, page_name, picture_url")
+      .eq("user_id", user.id),
     supabase
       .from("automations")
       .select("*", { count: "exact", head: true })
@@ -69,6 +75,27 @@ export default async function OverviewPage({
         <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
           Couldn&apos;t connect: {sp.reason || "unknown error"}
         </div>
+      )}
+
+      {!account && (fbPages ?? []).length > 0 && (
+        <Link
+          href="/dashboard/channels"
+          className="glass flex items-center justify-between gap-3 rounded-3xl p-5 transition-colors duration-200 hover:bg-white/85 cursor-pointer"
+        >
+          <div className="flex items-center gap-4">
+            <div className="inline-flex rounded-2xl bg-[#1877F2] p-3 text-white">
+              <FacebookIcon className="h-5 w-5" />
+            </div>
+            <div>
+              <p className="font-bold text-ink">
+                {fbPages!.length} Facebook{" "}
+                {fbPages!.length === 1 ? "Page" : "Pages"} connected
+              </p>
+              <p className="text-sm text-ink-soft">Manage your channels</p>
+            </div>
+          </div>
+          <span className="text-brand-500">→</span>
+        </Link>
       )}
 
       {!account ? (
@@ -122,6 +149,32 @@ export default async function OverviewPage({
                 </p>
               </div>
             </div>
+
+            {(fbPages ?? []).length > 0 && (
+              <div className="glass flex items-center gap-4 rounded-3xl p-5">
+                <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-[#1877F2] text-white">
+                  <FacebookIcon className="h-6 w-6" />
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <span className="truncate font-bold text-ink">
+                      {fbPages!.length === 1
+                        ? fbPages![0].page_name
+                        : `${fbPages!.length} Facebook Pages`}
+                    </span>
+                    <span className="inline-flex items-center gap-1 rounded-full bg-cyan-100 px-2 py-0.5 text-[11px] font-semibold text-cyan-700">
+                      <CheckIcon className="h-3 w-3" /> Connected
+                    </span>
+                  </div>
+                  <Link
+                    href="/dashboard/channels"
+                    className="text-xs text-ink-soft underline-offset-2 hover:underline"
+                  >
+                    Manage channels
+                  </Link>
+                </div>
+              </div>
+            )}
 
             <StatCard
               icon={<BoltIcon className="h-5 w-5" />}

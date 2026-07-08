@@ -10,7 +10,7 @@ export default async function TrackingPage() {
     supabase
       .from("automations")
       .select(
-        "id, name, keyword, dm_message, public_reply, media_thumbnail, media_permalink, is_active, sent_count, created_at",
+        "id, name, keyword, dm_message, public_reply, media_thumbnail, media_permalink, is_active, sent_count, created_at, platform",
       )
       .eq("user_id", user.id)
       .order("created_at", { ascending: false }),
@@ -50,6 +50,7 @@ export default async function TrackingPage() {
       dmMessage: a.dm_message,
       publicReply: a.public_reply,
       isActive: a.is_active,
+      platform: a.platform,
       interactions,
       counts: countByStatus(interactions),
     };
@@ -67,6 +68,7 @@ export default async function TrackingPage() {
       dmMessage: null,
       publicReply: null,
       isActive: false,
+      platform: null,
       interactions: orphan,
       counts: countByStatus(orphan),
     });

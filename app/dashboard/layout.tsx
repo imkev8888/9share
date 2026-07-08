@@ -5,6 +5,7 @@ import {
   Logo,
   ChartIcon,
   BoltIcon,
+  LinkIcon,
   MessageIcon,
   SheetIcon,
   LogoutIcon,
@@ -33,6 +34,12 @@ export default async function DashboardLayout({
         <nav className="flex flex-1 flex-col gap-1">
           <NavLink href="/dashboard" icon={<ChartIcon className="h-5 w-5" />}>
             Overview
+          </NavLink>
+          <NavLink
+            href="/dashboard/channels"
+            icon={<LinkIcon className="h-5 w-5" />}
+          >
+            Channels
           </NavLink>
           <NavLink
             href="/dashboard/automations"
@@ -99,6 +106,13 @@ export default async function DashboardLayout({
         <nav className="glass sticky bottom-4 mt-6 flex items-center justify-around gap-1 rounded-2xl p-2 md:hidden">
           <NavLink href="/dashboard" icon={<ChartIcon className="h-5 w-5" />} mobile>
             Overview
+          </NavLink>
+          <NavLink
+            href="/dashboard/channels"
+            icon={<LinkIcon className="h-5 w-5" />}
+            mobile
+          >
+            Channels
           </NavLink>
           <NavLink
             href="/dashboard/automations"

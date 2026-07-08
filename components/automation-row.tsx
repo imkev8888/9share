@@ -4,6 +4,7 @@ import Image from "next/image";
 import { useState, useTransition } from "react";
 import { toggleAutomation, deleteAutomation } from "@/app/dashboard/actions";
 import { TrashIcon, MessageIcon } from "@/components/icons";
+import { PlatformBadge } from "@/components/platform-badge";
 
 interface Automation {
   id: string;
@@ -14,6 +15,7 @@ interface Automation {
   media_permalink: string | null;
   is_active: boolean;
   sent_count: number;
+  platform?: string | null;
 }
 
 export function AutomationRow({ automation }: { automation: Automation }) {
@@ -54,7 +56,10 @@ export function AutomationRow({ automation }: { automation: Automation }) {
           </div>
         )}
         <div className="min-w-0">
-          <p className="truncate font-bold text-ink">{automation.name}</p>
+          <div className="flex items-center gap-2">
+            <p className="truncate font-bold text-ink">{automation.name}</p>
+            <PlatformBadge platform={automation.platform} />
+          </div>
           <p className="truncate text-sm text-ink-soft">
             {automation.keyword ? (
               <>

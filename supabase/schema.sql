@@ -116,3 +116,77 @@ create policy "own automations" on public.automations
 drop policy if exists "own logs" on public.automation_logs;
 create policy "own logs" on public.automation_logs
   for select using (auth.uid() = user_id);
+
+-- ============================================================================
+-- Facebook Pages support (comment-to-Messenger automation)
+-- Additive migration — safe to re-run on an existing database.
+-- ============================================================================
+
+-- ---------------------------------------------------------------------------
+-- Connected Facebook Pages (one user can connect multiple Pages)
+-- ---------------------------------------------------------------------------
+create table if not exists public.facebook_pages (
+  id                 uuid primary key default gen_random_uuid(),
+  user_id            uuid not null references auth.users (id) on delete cascade,
+  page_id            text not null unique,
+  page_name          text,
+  picture_url        text,
+  -- Long-lived Page access token (does not expire under normal conditions).
+  page_access_token  text not null,
+  created_at         timestamptz not null default now(),
+  updated_at         timestamptz not null default now()
+);
+
+create index if not exists facebook_pages_user_id_idx
+  on public.facebook_pages (user_id);
+
+-- ---------------------------------------------------------------------------
+-- Automations: add multi-platform columns.
+-- For Facebook rows, ig_media_id stores the Facebook post id.
+-- ---------------------------------------------------------------------------
+alter table public.automations
+  add column if not exists platform text not null default 'instagram';
+
+alter table public.automations
+  add column if not exists fb_page_id uuid references public.facebook_pages (id) on delete cascade;
+
+-- Instagram-only automations required account_id; now exactly one of
+-- account_id / fb_page_id must be set.
+alter table public.automations
+  alter column account_id drop not null;
+
+alter table public.automations
+  drop constraint if exists automations_channel_check;
+alter table public.automations
+  add constraint automations_channel_check
+  check (
+    ((account_id is not null)::int + (fb_page_id is not null)::int) = 1
+  );
+
+-- Only one automation per Facebook post per Page.
+create unique index if not exists automations_fb_page_post_unique
+  on public.automations (fb_page_id, ig_media_id)
+  where fb_page_id is not null;
+
+create index if not exists automations_fb_page_media_idx
+  on public.automations (fb_page_id, ig_media_id);
+
+-- ---------------------------------------------------------------------------
+-- Logs: attribute Facebook sends to their Page.
+-- ---------------------------------------------------------------------------
+alter table public.automation_logs
+  add column if not exists fb_page_id uuid references public.facebook_pages (id) on delete cascade;
+
+-- ---------------------------------------------------------------------------
+-- updated_at trigger + RLS for facebook_pages
+-- ---------------------------------------------------------------------------
+drop trigger if exists set_facebook_pages_updated_at on public.facebook_pages;
+create trigger set_facebook_pages_updated_at
+  before update on public.facebook_pages
+  for each row execute function public.set_updated_at();
+
+alter table public.facebook_pages enable row level security;
+
+drop policy if exists "own pages" on public.facebook_pages;
+create policy "own pages" on public.facebook_pages
+  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);

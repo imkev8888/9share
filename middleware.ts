@@ -50,8 +50,8 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  // Run on everything except static assets and the webhook (must stay public).
+  // Run on everything except static assets and the webhooks (must stay public).
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|api/instagram/webhook|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|api/instagram/webhook|api/facebook/webhook|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
   ],
 };
