@@ -49,11 +49,10 @@ export default async function ChooseFacebookPagesPage() {
           <FacebookIcon className="h-7 w-7" />
         </div>
         <h1 className="text-2xl font-extrabold tracking-tight text-ink">
-          Choose your Pages
+          Choose your Page
         </h1>
         <p className="mx-auto mt-2 max-w-md text-sm text-ink-soft">
-          Pick the Facebook Pages you want to automate. You can connect more
-          Pages later from Channels.
+          Pick the Facebook Page you want to automate.
         </p>
       </div>
 

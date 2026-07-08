@@ -88,12 +88,22 @@ function fbToItem(p: FbPost, fbPageId: string): PickerItem {
   };
 }
 
+export interface BuilderInitialValues {
+  name?: string;
+  keyword?: string;
+  dmMessage?: string;
+  publicReply?: string;
+}
+
 export function AutomationBuilder({
   instagram,
   facebook,
+  initialValues,
 }: {
   instagram?: InstagramChannelProps;
   facebook?: FacebookChannelProps;
+  /** Prefill campaign content, e.g. when duplicating an automation. */
+  initialValues?: BuilderInitialValues;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -122,11 +132,15 @@ export function AutomationBuilder({
   const [fbPosts, setFbPosts] = useState<Record<string, FbPostsState>>({});
 
   const [selected, setSelected] = useState<PickerItem[]>([]);
-  const [name, setName] = useState("");
-  const [nameEdited, setNameEdited] = useState(false);
-  const [keyword, setKeyword] = useState("");
-  const [dmMessage, setDmMessage] = useState("");
-  const [publicReply, setPublicReply] = useState("");
+  const [name, setName] = useState(initialValues?.name ?? "");
+  // Prefilled names (from duplication) shouldn't be overwritten by the
+  // caption-based smart default.
+  const [nameEdited, setNameEdited] = useState(!!initialValues?.name);
+  const [keyword, setKeyword] = useState(initialValues?.keyword ?? "");
+  const [dmMessage, setDmMessage] = useState(initialValues?.dmMessage ?? "");
+  const [publicReply, setPublicReply] = useState(
+    initialValues?.publicReply ?? "",
+  );
   const [error, setError] = useState<string | null>(null);
 
   const selectedIds = new Set(selected.map((m) => m.id));

@@ -5,21 +5,36 @@ import { ConnectButton } from "@/components/connect-button";
 import { FacebookConnectButton } from "@/components/facebook-connect-button";
 import { AutomationBuilder } from "@/components/automation-builder";
 
-export default async function NewAutomationPage() {
+export default async function NewAutomationPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ from?: string }>;
+}) {
+  const sp = await searchParams;
   const { supabase, user } = await requireUser();
 
-  const [{ data: account }, { data: fbPages }] = await Promise.all([
-    supabase
-      .from("instagram_accounts")
-      .select("id, access_token, username")
-      .eq("user_id", user.id)
-      .maybeSingle(),
-    supabase
-      .from("facebook_pages")
-      .select("id, page_name, picture_url")
-      .eq("user_id", user.id)
-      .order("created_at", { ascending: true }),
-  ]);
+  const [{ data: account }, { data: fbPages }, { data: sourceAutomation }] =
+    await Promise.all([
+      supabase
+        .from("instagram_accounts")
+        .select("id, access_token, username")
+        .eq("user_id", user.id)
+        .maybeSingle(),
+      supabase
+        .from("facebook_pages")
+        .select("id, page_name, picture_url")
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: true }),
+      // Duplicating an existing automation? Prefill its campaign content.
+      sp.from
+        ? supabase
+            .from("automations")
+            .select("name, keyword, dm_message, public_reply")
+            .eq("id", sp.from)
+            .eq("user_id", user.id)
+            .maybeSingle()
+        : Promise.resolve({ data: null }),
+    ]);
 
   const pages = fbPages ?? [];
 
@@ -71,11 +86,24 @@ export default async function NewAutomationPage() {
   const usedMediaIds = (igExisting.data ?? []).map((e) => e.ig_media_id);
   const usedFbPostIds = (fbExisting.data ?? []).map((e) => e.ig_media_id);
 
-  const subtitle = account
-    ? pages.length > 0
-      ? `Pick posts from @${account.username} or your Facebook Pages, then write the DM.`
-      : `Pick a post from @${account.username}, then write the DM.`
-    : "Pick posts from your Facebook Pages, then write the DM.";
+  const initialValues = sourceAutomation
+    ? {
+        name: sourceAutomation.name
+          ? `${sourceAutomation.name} (copy)`
+          : undefined,
+        keyword: sourceAutomation.keyword ?? undefined,
+        dmMessage: sourceAutomation.dm_message ?? undefined,
+        publicReply: sourceAutomation.public_reply ?? undefined,
+      }
+    : undefined;
+
+  const subtitle = sourceAutomation
+    ? "Campaign content copied — just pick the posts to run it on."
+    : account
+      ? pages.length > 0
+        ? `Pick posts from @${account.username} or your Facebook Pages, then write the DM.`
+        : `Pick a post from @${account.username}, then write the DM.`
+      : "Pick posts from your Facebook Pages, then write the DM.";
 
   return (
     <div className="space-y-6">
@@ -134,6 +162,7 @@ export default async function NewAutomationPage() {
                   }
                 : undefined
             }
+            initialValues={initialValues}
           />
         </>
       )}
