@@ -29,6 +29,9 @@ export const FB_SCOPES = [
   "pages_read_user_content",
   "pages_messaging",
   "pages_manage_engagement",
+  // Required so /me/accounts returns Pages linked to a Meta Business
+  // portfolio. Without it Meta silently omits Business-Manager-owned Pages.
+  "business_management",
 ] as const;
 
 function appId() {
