@@ -1,26 +1,34 @@
 import Link from "next/link";
 import { requireUser } from "@/lib/auth";
 import { ConnectButton } from "@/components/connect-button";
+import { FacebookConnectButton } from "@/components/facebook-connect-button";
 import { AutomationRow } from "@/components/automation-row";
 import { PlusIcon, BoltIcon } from "@/components/icons";
 
 export default async function AutomationsPage() {
   const { supabase, user } = await requireUser();
 
-  const [{ data: account }, { data: automations }] = await Promise.all([
-    supabase
-      .from("instagram_accounts")
-      .select("id")
-      .eq("user_id", user.id)
-      .maybeSingle(),
-    supabase
-      .from("automations")
-      .select(
-        "id, name, keyword, dm_message, media_thumbnail, media_permalink, is_active, sent_count",
-      )
-      .eq("user_id", user.id)
-      .order("created_at", { ascending: false }),
-  ]);
+  const [{ data: account }, { count: fbPageCount }, { data: automations }] =
+    await Promise.all([
+      supabase
+        .from("instagram_accounts")
+        .select("id")
+        .eq("user_id", user.id)
+        .maybeSingle(),
+      supabase
+        .from("facebook_pages")
+        .select("id", { count: "exact", head: true })
+        .eq("user_id", user.id),
+      supabase
+        .from("automations")
+        .select(
+          "id, name, keyword, dm_message, media_thumbnail, media_permalink, is_active, sent_count, platform",
+        )
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false }),
+    ]);
+
+  const hasChannel = !!account || (fbPageCount ?? 0) > 0;
 
   return (
     <div className="space-y-6">
@@ -33,7 +41,7 @@ export default async function AutomationsPage() {
             One campaign per post. Toggle on or off anytime.
           </p>
         </div>
-        {account && (
+        {hasChannel && (
           <Link
             href="/dashboard/automations/new"
             className="inline-flex items-center gap-2 rounded-2xl bg-[var(--color-cyan-cta)] px-5 py-2.5 font-bold text-white shadow-sm transition-colors duration-200 hover:bg-[var(--color-cyan-cta-dark)] cursor-pointer"
@@ -44,16 +52,17 @@ export default async function AutomationsPage() {
         )}
       </div>
 
-      {!account ? (
+      {!hasChannel ? (
         <div className="glass-strong rounded-3xl p-10 text-center">
           <h2 className="text-lg font-bold text-ink">
-            Connect Instagram first
+            Connect a channel first
           </h2>
           <p className="mx-auto mt-2 max-w-sm text-sm text-ink-soft">
             You need a connected account before creating automations.
           </p>
-          <div className="mt-5">
+          <div className="mt-5 flex flex-wrap items-center justify-center gap-3">
             <ConnectButton />
+            <FacebookConnectButton />
           </div>
         </div>
       ) : automations && automations.length > 0 ? (

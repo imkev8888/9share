@@ -104,6 +104,56 @@ For production beyond testers, submit these for **App Review**.
 
 ---
 
+## 3.5 Meta / Facebook Page app setup
+
+Facebook Page **comment-to-Messenger** automation uses the same Meta app but
+the **Facebook Login** product and **Page** webhooks (separate credentials
+from the Instagram ones).
+
+### 3.5a. App credentials
+In the Meta App Dashboard open **App settings → Basic** and copy the **App ID**
+and **App secret** into your env vars (`FACEBOOK_APP_ID`,
+`FACEBOOK_APP_SECRET`).
+
+### 3.5b. Facebook Login
+Add the **Facebook Login for Business** product. Under
+**Facebook Login → Settings**, add to **Valid OAuth Redirect URIs**:
+
+```
+https://YOUR-DOMAIN/api/facebook/callback
+```
+
+### 3.5c. Webhooks
+Under **Webhooks**, select the **Page** object:
+
+- **Callback URL:** `https://YOUR-DOMAIN/api/facebook/webhook`
+- **Verify token:** the exact value of your `FACEBOOK_VERIFY_TOKEN` env var.
+- Click **Verify and save**, then **Subscribe** to the **`feed`** field.
+
+9share also installs the app on each connected Page automatically
+(`/{page_id}/subscribed_apps`), which is required for webhook delivery.
+
+### 3.5d. Permissions
+The connect flow requests: `pages_show_list`, `pages_manage_metadata`,
+`pages_read_engagement`, `pages_read_user_content`, `pages_messaging`,
+`pages_manage_engagement`.
+
+> In **Development mode** everything works for Pages you admin (add testers
+> under **App roles → Roles**). For public launch you need **Business
+> Verification** + **App Review** with a screencast of the connect and
+> automation flow.
+
+### How the Facebook flow differs from Instagram
+- Facebook Login returns a **user token**; 9share then lists the Pages you
+  manage (`/me/accounts`) and shows a **"Choose your Pages"** picker — each
+  selected Page gets its own long-lived **Page access token** (these do not
+  expire, so no refresh job is needed).
+- The DM uses the Messenger **Private Reply** mechanism
+  (`recipient.comment_id`) — one message per comment, within 7 days of the
+  comment. If the person replies, a 24-hour messaging window opens.
+
+---
+
 ## 4. Environment variables
 
 Copy `.env.example` → `.env.local` (already created for you with the test app
@@ -115,6 +165,9 @@ credentials) and fill in the Supabase values:
 | `INSTAGRAM_APP_ID` | Meta dashboard → Instagram app ID |
 | `INSTAGRAM_APP_SECRET` | Meta dashboard → Instagram app secret |
 | `INSTAGRAM_VERIFY_TOKEN` | Any random string; must match the webhook Verify token |
+| `FACEBOOK_APP_ID` | Meta dashboard → App settings → Basic → App ID |
+| `FACEBOOK_APP_SECRET` | Meta dashboard → App settings → Basic → App secret |
+| `FACEBOOK_VERIFY_TOKEN` | Any random string; must match the Page webhook Verify token |
 | `NEXT_PUBLIC_SUPABASE_URL` | Supabase → Settings → API |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase → Settings → API |
 | `SUPABASE_SERVICE_ROLE_KEY` | Supabase → Settings → API (secret!) |
@@ -175,8 +228,15 @@ app/
     connect/route.ts               Start OAuth
     callback/route.ts              OAuth callback → store token → subscribe
     webhook/route.ts               Verify handshake + comment → DM handler
+  api/facebook/
+    connect/route.ts               Start Facebook OAuth
+    callback/route.ts              OAuth callback → Page picker
+    pages/route.ts                 Confirm picked Pages → store tokens + subscribe
+    posts/route.ts                 Paginated Page posts for the builder
+    webhook/route.ts               Verify handshake + comment → Messenger handler
 lib/
   instagram.ts                     Instagram API helpers
+  facebook.ts                      Facebook Pages / Messenger API helpers
   supabase/{client,server,admin}.ts
 components/                        UI components (SVG icons, builder, etc.)
 supabase/schema.sql                Database schema + RLS

@@ -2,23 +2,38 @@ import Link from "next/link";
 import { requireUser } from "@/lib/auth";
 import { getMediaPage, type IgMedia } from "@/lib/instagram";
 import { ConnectButton } from "@/components/connect-button";
+import { FacebookConnectButton } from "@/components/facebook-connect-button";
 import { AutomationBuilder } from "@/components/automation-builder";
 
 export default async function NewAutomationPage() {
   const { supabase, user } = await requireUser();
 
-  const { data: account } = await supabase
-    .from("instagram_accounts")
-    .select("id, access_token, username")
-    .eq("user_id", user.id)
-    .maybeSingle();
+  const [{ data: account }, { data: fbPages }] = await Promise.all([
+    supabase
+      .from("instagram_accounts")
+      .select("id, access_token, username")
+      .eq("user_id", user.id)
+      .maybeSingle(),
+    supabase
+      .from("facebook_pages")
+      .select("id, page_name, picture_url")
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: true }),
+  ]);
 
-  if (!account) {
+  const pages = fbPages ?? [];
+
+  if (!account && pages.length === 0) {
     return (
       <div className="glass-strong rounded-3xl p-10 text-center">
-        <h2 className="text-lg font-bold text-ink">Connect Instagram first</h2>
-        <div className="mt-5">
+        <h2 className="text-lg font-bold text-ink">Connect a channel first</h2>
+        <p className="mx-auto mt-2 max-w-sm text-sm text-ink-soft">
+          You need a connected Instagram account or Facebook Page before
+          creating automations.
+        </p>
+        <div className="mt-5 flex flex-wrap items-center justify-center gap-3">
           <ConnectButton />
+          <FacebookConnectButton />
         </div>
       </div>
     );
@@ -27,20 +42,40 @@ export default async function NewAutomationPage() {
   let media: IgMedia[] = [];
   let nextCursor: string | undefined;
   let loadError: string | null = null;
-  try {
-    const page = await getMediaPage(account.access_token, 30);
-    media = page.data;
-    nextCursor = page.after;
-  } catch (e) {
-    loadError = e instanceof Error ? e.message : "Failed to load posts";
+  if (account) {
+    try {
+      const page = await getMediaPage(account.access_token, 30);
+      media = page.data;
+      nextCursor = page.after;
+    } catch (e) {
+      loadError = e instanceof Error ? e.message : "Failed to load posts";
+    }
   }
 
   // Which posts already have an automation?
-  const { data: existing } = await supabase
-    .from("automations")
-    .select("ig_media_id")
-    .eq("account_id", account.id);
-  const usedMediaIds = new Set((existing ?? []).map((e) => e.ig_media_id));
+  const [igExisting, fbExisting] = await Promise.all([
+    account
+      ? supabase
+          .from("automations")
+          .select("ig_media_id")
+          .eq("account_id", account.id)
+      : Promise.resolve({ data: [] as { ig_media_id: string }[] }),
+    pages.length > 0
+      ? supabase
+          .from("automations")
+          .select("ig_media_id")
+          .eq("user_id", user.id)
+          .eq("platform", "facebook")
+      : Promise.resolve({ data: [] as { ig_media_id: string }[] }),
+  ]);
+  const usedMediaIds = (igExisting.data ?? []).map((e) => e.ig_media_id);
+  const usedFbPostIds = (fbExisting.data ?? []).map((e) => e.ig_media_id);
+
+  const subtitle = account
+    ? pages.length > 0
+      ? `Pick posts from @${account.username} or your Facebook Pages, then write the DM.`
+      : `Pick a post from @${account.username}, then write the DM.`
+    : "Pick posts from your Facebook Pages, then write the DM.";
 
   return (
     <div className="space-y-6">
@@ -55,13 +90,11 @@ export default async function NewAutomationPage() {
           <h1 className="text-2xl font-extrabold tracking-tight text-ink">
             New automation
           </h1>
-          <p className="text-sm text-ink-soft">
-            Pick a post from @{account.username}, then write the DM.
-          </p>
+          <p className="text-sm text-ink-soft">{subtitle}</p>
         </div>
       </div>
 
-      {loadError ? (
+      {loadError && pages.length === 0 ? (
         <div className="glass-strong rounded-3xl p-8 text-center">
           <p className="text-sm font-medium text-red-700">
             Couldn&apos;t load your posts: {loadError}
@@ -71,12 +104,38 @@ export default async function NewAutomationPage() {
           </p>
         </div>
       ) : (
-        <AutomationBuilder
-          accountId={account.id}
-          media={media}
-          nextCursor={nextCursor}
-          usedMediaIds={Array.from(usedMediaIds)}
-        />
+        <>
+          {loadError && (
+            <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
+              Couldn&apos;t load your Instagram posts: {loadError}. Facebook
+              posts are still available below.
+            </div>
+          )}
+          <AutomationBuilder
+            instagram={
+              account && !loadError
+                ? {
+                    accountId: account.id,
+                    media,
+                    nextCursor,
+                    usedMediaIds,
+                  }
+                : undefined
+            }
+            facebook={
+              pages.length > 0
+                ? {
+                    pages: pages.map((p) => ({
+                      id: p.id,
+                      name: p.page_name ?? "Facebook Page",
+                      pictureUrl: p.picture_url,
+                    })),
+                    usedPostIds: usedFbPostIds,
+                  }
+                : undefined
+            }
+          />
+        </>
       )}
     </div>
   );

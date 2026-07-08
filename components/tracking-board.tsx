@@ -3,6 +3,7 @@
 import Image from "next/image";
 import { useMemo, useState } from "react";
 import { StatusPill } from "@/components/status-pill";
+import { PlatformBadge } from "@/components/platform-badge";
 import {
   ChevronDownIcon,
   SearchIcon,
@@ -29,6 +30,7 @@ export interface PostGroup {
   dmMessage: string | null;
   publicReply: string | null;
   isActive: boolean;
+  platform?: string | null;
   interactions: Interaction[];
   counts: { total: number; sent: number; skipped: number; failed: number };
 }
@@ -152,6 +154,7 @@ function PostCard({ group }: { group: PostGroup }) {
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <p className="truncate font-bold text-ink">{group.name}</p>
+            {group.automationId && <PlatformBadge platform={group.platform} />}
             {group.automationId &&
               (group.isActive ? (
                 <span className="hidden shrink-0 rounded-full bg-cyan-100 px-2 py-0.5 text-[10px] font-semibold text-cyan-700 sm:inline">

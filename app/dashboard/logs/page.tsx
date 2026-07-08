@@ -1,5 +1,6 @@
 import { requireUser } from "@/lib/auth";
 import { StatusPill } from "@/components/status-pill";
+import { PlatformBadge } from "@/components/platform-badge";
 import { MessageIcon } from "@/components/icons";
 
 export default async function LogsPage() {
@@ -36,6 +37,9 @@ export default async function LogsPage() {
                     <p className="font-semibold text-ink">
                       @{log.commenter_username ?? "someone"}
                     </p>
+                    <PlatformBadge
+                      platform={log.fb_page_id ? "facebook" : "instagram"}
+                    />
                     <StatusPill status={log.status} />
                   </div>
                   <p className="mt-0.5 truncate text-sm text-ink-soft">
