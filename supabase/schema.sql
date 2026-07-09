@@ -177,6 +177,12 @@ create index if not exists automations_fb_page_media_idx
 alter table public.automation_logs
   add column if not exists fb_page_id uuid references public.facebook_pages (id) on delete cascade;
 
+-- Fast lookup for "have we already messaged this commenter for this post?"
+-- (one DM per person per automation).
+create index if not exists automation_logs_automation_commenter_idx
+  on public.automation_logs (automation_id, commenter_id)
+  where status = 'sent';
+
 -- ---------------------------------------------------------------------------
 -- updated_at trigger + RLS for facebook_pages
 -- ---------------------------------------------------------------------------

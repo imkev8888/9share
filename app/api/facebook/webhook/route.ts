@@ -119,6 +119,11 @@ async function handleComment(pageId: string, value: FeedValue) {
   // Ignore the Page's own comments (avoid replying to ourselves).
   if (value.from?.id && value.from.id === pageId) return;
 
+  // Ignore replies inside comment threads — only top-level comments trigger
+  // automations. On feed webhooks a top-level comment has parent_id equal to
+  // the post id; replies point at their parent comment instead.
+  if (value.parent_id && value.parent_id !== postId) return;
+
   const admin = createAdminClient();
 
   // Find the connected Page (and its token) by Facebook Page id.
@@ -167,6 +172,34 @@ async function handleComment(pageId: string, value: FeedValue) {
     .eq("status", "sent")
     .maybeSingle();
   if (existing) return;
+
+  // One DM per person per post: if we already messaged this commenter for
+  // this automation, don't DM (or public-reply) them again.
+  if (value.from?.id) {
+    const { data: alreadyMessaged } = await admin
+      .from("automation_logs")
+      .select("id")
+      .eq("automation_id", automation.id)
+      .eq("commenter_id", value.from.id)
+      .eq("status", "sent")
+      .limit(1)
+      .maybeSingle();
+
+    if (alreadyMessaged) {
+      await admin.from("automation_logs").insert({
+        automation_id: automation.id,
+        fb_page_id: page.id,
+        user_id: page.user_id,
+        comment_id: commentId,
+        commenter_id: value.from.id,
+        commenter_username: value.from.name ?? null,
+        comment_text: value.message ?? null,
+        status: "skipped",
+        error: "already messaged this user for this post",
+      });
+      return;
+    }
+  }
 
   // Anti-spam rate limit: cap DMs per Page over the last rolling hour so a
   // viral post can't trigger a burst that Meta reads as spam.
