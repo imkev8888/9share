@@ -76,7 +76,7 @@ export default async function DashboardLayout({
       </aside>
 
       {/* Mobile top bar */}
-      <div className="flex w-full flex-col">
+      <div className="flex w-full min-w-0 flex-col">
         <header className="glass mb-6 flex items-center justify-between rounded-2xl px-4 py-3 md:hidden">
           <Link href="/dashboard" className="flex items-center gap-2">
             <Logo className="h-8 w-8" />
