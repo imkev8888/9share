@@ -120,6 +120,11 @@ async function handleComment(igAccountId: string, comment: CommentValue) {
   // Ignore the account's own comments (avoid replying to ourselves).
   if (comment.from?.id && comment.from.id === account.ig_user_id) return;
 
+  // Ignore replies inside comment threads — only top-level comments trigger
+  // automations. Otherwise every message in a back-and-forth conversation
+  // under a comment would fire another DM.
+  if (comment.parent_id) return;
+
   const mediaId = comment.media?.id;
   if (!mediaId) return;
 
@@ -160,6 +165,34 @@ async function handleComment(igAccountId: string, comment: CommentValue) {
     .eq("status", "sent")
     .maybeSingle();
   if (existing) return;
+
+  // One DM per person per post: if we already messaged this commenter for
+  // this automation, don't DM (or public-reply) them again.
+  if (comment.from?.id) {
+    const { data: alreadyMessaged } = await admin
+      .from("automation_logs")
+      .select("id")
+      .eq("automation_id", automation.id)
+      .eq("commenter_id", comment.from.id)
+      .eq("status", "sent")
+      .limit(1)
+      .maybeSingle();
+
+    if (alreadyMessaged) {
+      await admin.from("automation_logs").insert({
+        automation_id: automation.id,
+        account_id: account.id,
+        user_id: account.user_id,
+        comment_id: comment.id,
+        commenter_id: comment.from.id,
+        commenter_username: comment.from.username ?? null,
+        comment_text: comment.text ?? null,
+        status: "skipped",
+        error: "already messaged this user for this post",
+      });
+      return;
+    }
+  }
 
   // Anti-spam rate limit: cap DMs per account over the last rolling hour so a
   // viral post can't trigger a burst that Instagram reads as spam.
