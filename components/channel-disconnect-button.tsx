@@ -4,6 +4,8 @@ import { useTransition } from "react";
 import {
   disconnectInstagram,
   disconnectFacebookPage,
+  disconnectThreads,
+  disconnectLinkedIn,
 } from "@/app/dashboard/actions";
 
 export function ChannelDisconnectButton({
@@ -11,7 +13,7 @@ export function ChannelDisconnectButton({
   id,
   name,
 }: {
-  platform: "instagram" | "facebook";
+  platform: "instagram" | "facebook" | "threads" | "linkedin";
   id: string;
   name: string;
 }) {
@@ -22,7 +24,9 @@ export function ChannelDisconnectButton({
       return;
     startTransition(async () => {
       if (platform === "instagram") await disconnectInstagram(id);
-      else await disconnectFacebookPage(id);
+      else if (platform === "facebook") await disconnectFacebookPage(id);
+      else if (platform === "threads") await disconnectThreads(id);
+      else await disconnectLinkedIn(id);
     });
   }
 

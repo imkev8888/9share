@@ -1,9 +1,9 @@
-import { requireUser } from "@/lib/auth";
+import { requireAutomationAccess } from "@/lib/product-gate";
 import { TrackingBoard, type PostGroup } from "@/components/tracking-board";
 import { SheetIcon } from "@/components/icons";
 
 export default async function TrackingPage() {
-  const { supabase, user } = await requireUser();
+  const { supabase, user } = await requireAutomationAccess();
 
   // Pull automations (the "posts") and every interaction in parallel.
   const [{ data: automations }, { data: logs }] = await Promise.all([

@@ -1,12 +1,12 @@
 import Link from "next/link";
-import { requireUser } from "@/lib/auth";
+import { requireAutomationAccess } from "@/lib/product-gate";
 import { ConnectButton } from "@/components/connect-button";
 import { FacebookConnectButton } from "@/components/facebook-connect-button";
 import { AutomationRow } from "@/components/automation-row";
 import { PlusIcon, BoltIcon } from "@/components/icons";
 
 export default async function AutomationsPage() {
-  const { supabase, user } = await requireUser();
+  const { supabase, user } = await requireAutomationAccess();
 
   const [{ data: account }, { count: fbPageCount }, { data: automations }] =
     await Promise.all([

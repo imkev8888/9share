@@ -1,4 +1,4 @@
-import { requireUser } from "@/lib/auth";
+import { requireAutomationAccess } from "@/lib/product-gate";
 import {
   ActivityFeed,
   type ActivityLog,
@@ -6,7 +6,7 @@ import {
 } from "@/components/activity-feed";
 
 export default async function LogsPage() {
-  const { supabase, user } = await requireUser();
+  const { supabase, user } = await requireAutomationAccess();
 
   const [{ data: logs }, { data: igAccount }, { data: automations }] =
     await Promise.all([

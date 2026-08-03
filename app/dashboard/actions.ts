@@ -59,6 +59,30 @@ export async function disconnectFacebookPage(pageId: string) {
   revalidatePath("/dashboard/channels");
 }
 
+export async function disconnectThreads(accountId: string) {
+  const { supabase, user } = await requireUser();
+  await supabase
+    .from("threads_accounts")
+    .delete()
+    .eq("id", accountId)
+    .eq("user_id", user.id);
+  revalidatePath("/dashboard");
+  revalidatePath("/dashboard/channels");
+  revalidatePath("/dashboard/cross-post");
+}
+
+export async function disconnectLinkedIn(accountId: string) {
+  const { supabase, user } = await requireUser();
+  await supabase
+    .from("linkedin_accounts")
+    .delete()
+    .eq("id", accountId)
+    .eq("user_id", user.id);
+  revalidatePath("/dashboard");
+  revalidatePath("/dashboard/channels");
+  revalidatePath("/dashboard/cross-post");
+}
+
 export interface AutomationMediaInput {
   igMediaId: string;
   mediaPermalink?: string;

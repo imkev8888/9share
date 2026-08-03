@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { requireUser } from "@/lib/auth";
+import { requireAutomationAccess } from "@/lib/product-gate";
 import { getMediaPage, type IgMedia } from "@/lib/instagram";
 import { ConnectButton } from "@/components/connect-button";
 import { FacebookConnectButton } from "@/components/facebook-connect-button";
@@ -11,7 +11,7 @@ export default async function NewAutomationPage({
   searchParams: Promise<{ from?: string }>;
 }) {
   const sp = await searchParams;
-  const { supabase, user } = await requireUser();
+  const { supabase, user } = await requireAutomationAccess();
 
   const [{ data: account }, { data: fbPages }, { data: sourceAutomation }] =
     await Promise.all([

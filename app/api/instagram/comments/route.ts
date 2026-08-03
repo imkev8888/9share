@@ -2,7 +2,8 @@ import { NextResponse, type NextRequest } from "next/server";
 import {
   createMediaComment,
   deleteComment,
-  editComment,
+  replaceCommentReply,
+  replaceMediaComment,
 } from "@/lib/instagram";
 import { createClient } from "@/lib/supabase/server";
 
@@ -29,9 +30,8 @@ async function requireUser() {
 }
 
 /**
- * POST — create a comment (mediaId + message) or edit one (commentId + message).
- * Manual creates are logged to automation_logs for Activity.
- * Edits update public_reply_text or comment_text on the matching log row.
+ * POST — create a comment (mediaId + message) or replace one (commentId + message).
+ * Instagram cannot edit comment text in place; we post a new one and delete the old.
  */
 export async function POST(request: NextRequest) {
   const { supabase, user } = await requireUser();
@@ -69,43 +69,107 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Account not found" }, { status: 404 });
   }
 
-  // Edit existing comment (our public reply or our manual comment)
+  // Replace existing comment (IG has no true edit)
   if (body.commentId) {
-    const result = await editComment(body.commentId, message, account.access_token);
-    if (!result.ok) {
-      return NextResponse.json(
-        { error: result.error || "Failed to update comment" },
-        { status: 502 },
-      );
-    }
-
     const target = body.target ?? "comment";
-    if (body.logId) {
-      const patch =
-        target === "public_reply"
-          ? { public_reply_text: message }
-          : { comment_text: message };
+    let newId: string | undefined;
+
+    if (target === "public_reply") {
+      if (!body.logId) {
+        return NextResponse.json(
+          { error: "Missing logId for public reply edit" },
+          { status: 400 },
+        );
+      }
+      const { data: log } = await supabase
+        .from("automation_logs")
+        .select("comment_id")
+        .eq("id", body.logId)
+        .eq("user_id", user.id)
+        .maybeSingle();
+      if (!log?.comment_id) {
+        return NextResponse.json(
+          { error: "Parent comment not found for this reply" },
+          { status: 404 },
+        );
+      }
+
+      const result = await replaceCommentReply(
+        log.comment_id,
+        body.commentId,
+        message,
+        account.access_token,
+      );
+      if (!result.ok || !result.id) {
+        return NextResponse.json(
+          { error: result.error || "Failed to update reply" },
+          { status: 502 },
+        );
+      }
+      newId = result.id;
+
       await supabase
         .from("automation_logs")
-        .update(patch)
+        .update({ public_reply_text: message, public_reply_id: newId })
         .eq("id", body.logId)
         .eq("user_id", user.id);
-    } else if (target === "public_reply") {
-      await supabase
-        .from("automation_logs")
-        .update({ public_reply_text: message })
-        .eq("public_reply_id", body.commentId)
-        .eq("user_id", user.id);
     } else {
-      await supabase
-        .from("automation_logs")
-        .update({ comment_text: message })
-        .eq("comment_id", body.commentId)
-        .eq("user_id", user.id)
-        .eq("source", "manual");
+      let mediaId = body.mediaId ?? null;
+      if (!mediaId && body.logId) {
+        const { data: log } = await supabase
+          .from("automation_logs")
+          .select("automation_id")
+          .eq("id", body.logId)
+          .eq("user_id", user.id)
+          .maybeSingle();
+        if (log?.automation_id) {
+          const { data: auto } = await supabase
+            .from("automations")
+            .select("ig_media_id")
+            .eq("id", log.automation_id)
+            .eq("user_id", user.id)
+            .maybeSingle();
+          mediaId = auto?.ig_media_id ?? null;
+        }
+      }
+      if (!mediaId) {
+        return NextResponse.json(
+          { error: "Missing mediaId to update comment" },
+          { status: 400 },
+        );
+      }
+
+      const result = await replaceMediaComment(
+        mediaId,
+        body.commentId,
+        message,
+        account.access_token,
+      );
+      if (!result.ok || !result.id) {
+        return NextResponse.json(
+          { error: result.error || "Failed to update comment" },
+          { status: 502 },
+        );
+      }
+      newId = result.id;
+
+      if (body.logId) {
+        await supabase
+          .from("automation_logs")
+          .update({ comment_text: message, comment_id: newId })
+          .eq("id", body.logId)
+          .eq("user_id", user.id);
+      } else {
+        await supabase
+          .from("automation_logs")
+          .update({ comment_text: message, comment_id: newId })
+          .eq("comment_id", body.commentId)
+          .eq("user_id", user.id)
+          .eq("source", "manual");
+      }
     }
 
-    return NextResponse.json({ ok: true, commentId: body.commentId });
+    return NextResponse.json({ ok: true, commentId: newId });
   }
 
   // Create new top-level comment

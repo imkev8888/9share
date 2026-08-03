@@ -1,8 +1,18 @@
-import { requireUser } from "@/lib/auth";
+import { requireAnyProductAccess } from "@/lib/product-gate";
 import { ConnectButton } from "@/components/connect-button";
 import { FacebookConnectButton } from "@/components/facebook-connect-button";
+import { ThreadsConnectButton } from "@/components/threads-connect-button";
+import { LinkedInConnectButton } from "@/components/linkedin-connect-button";
 import { ChannelDisconnectButton } from "@/components/channel-disconnect-button";
-import { CheckIcon, FacebookIcon, InstagramIcon } from "@/components/icons";
+import { RedNoteChannelCard } from "@/components/rednote-channel-card";
+import { WeChatChannelCard } from "@/components/wechat-channel-card";
+import {
+  CheckIcon,
+  FacebookIcon,
+  InstagramIcon,
+  LinkedInIcon,
+  ThreadsIcon,
+} from "@/components/icons";
 import { MediaThumb } from "@/components/media-thumb";
 
 export default async function ChannelsPage({
@@ -11,9 +21,14 @@ export default async function ChannelsPage({
   searchParams: Promise<{ connect?: string; reason?: string }>;
 }) {
   const sp = await searchParams;
-  const { supabase, user } = await requireUser();
+  const { supabase, user } = await requireAnyProductAccess();
 
-  const [{ data: igAccount }, { data: fbPages }] = await Promise.all([
+  const [
+    { data: igAccount },
+    { data: fbPages },
+    { data: threadsAccount },
+    { data: linkedinAccount },
+  ] = await Promise.all([
     supabase
       .from("instagram_accounts")
       .select("id, username, name, profile_picture_url")
@@ -24,6 +39,16 @@ export default async function ChannelsPage({
       .select("id, page_id, page_name, picture_url")
       .eq("user_id", user.id)
       .order("created_at", { ascending: true }),
+    supabase
+      .from("threads_accounts")
+      .select("id, username, name")
+      .eq("user_id", user.id)
+      .maybeSingle(),
+    supabase
+      .from("linkedin_accounts")
+      .select("id, name")
+      .eq("user_id", user.id)
+      .maybeSingle(),
   ]);
 
   const pages = fbPages ?? [];
@@ -43,6 +68,16 @@ export default async function ChannelsPage({
         <div className="flex items-center gap-2 rounded-2xl border border-cyan-200 bg-cyan-50 px-4 py-3 text-sm font-medium text-cyan-800">
           <CheckIcon className="h-4 w-4" /> Facebook Page connected
           successfully.
+        </div>
+      )}
+      {sp.connect === "threads_success" && (
+        <div className="flex items-center gap-2 rounded-2xl border border-cyan-200 bg-cyan-50 px-4 py-3 text-sm font-medium text-cyan-800">
+          <CheckIcon className="h-4 w-4" /> Threads connected successfully.
+        </div>
+      )}
+      {sp.connect === "linkedin_success" && (
+        <div className="flex items-center gap-2 rounded-2xl border border-cyan-200 bg-cyan-50 px-4 py-3 text-sm font-medium text-cyan-800">
+          <CheckIcon className="h-4 w-4" /> LinkedIn connected successfully.
         </div>
       )}
       {sp.connect === "error" && (
@@ -165,6 +200,93 @@ export default async function ChannelsPage({
             </div>
           )}
         </div>
+
+        {/* Threads */}
+        <div className="glass rounded-3xl p-5">
+          <div className="mb-4 flex items-center gap-3">
+            <div className="inline-flex rounded-2xl bg-ink p-2.5 text-white">
+              <ThreadsIcon className="h-5 w-5" />
+            </div>
+            <div>
+              <h2 className="font-bold text-ink">Threads</h2>
+              <p className="text-xs text-ink-soft">Cross-post to Threads</p>
+            </div>
+          </div>
+
+          {threadsAccount ? (
+            <div className="flex items-center gap-3 rounded-2xl bg-white/60 p-3">
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1.5">
+                  <span className="truncate text-sm font-bold text-ink">
+                    @{threadsAccount.username ?? "threads"}
+                  </span>
+                  <span className="inline-flex items-center gap-1 rounded-full bg-cyan-100 px-2 py-0.5 text-[11px] font-semibold text-cyan-700">
+                    <CheckIcon className="h-3 w-3" /> Connected
+                  </span>
+                </div>
+                <p className="truncate text-xs text-ink-soft">
+                  {threadsAccount.name ?? "Threads account"}
+                </p>
+              </div>
+              <ChannelDisconnectButton
+                platform="threads"
+                id={threadsAccount.id}
+                name={`@${threadsAccount.username ?? "threads"}`}
+              />
+            </div>
+          ) : (
+            <div className="rounded-2xl bg-white/60 p-4 text-center">
+              <p className="mb-3 text-sm text-ink-soft">
+                Connect your Threads profile for cross-posting.
+              </p>
+              <ThreadsConnectButton />
+            </div>
+          )}
+        </div>
+
+        {/* LinkedIn */}
+        <div className="glass rounded-3xl p-5">
+          <div className="mb-4 flex items-center gap-3">
+            <div className="inline-flex rounded-2xl bg-[#0A66C2] p-2.5 text-white">
+              <LinkedInIcon className="h-5 w-5" />
+            </div>
+            <div>
+              <h2 className="font-bold text-ink">LinkedIn</h2>
+              <p className="text-xs text-ink-soft">Cross-post to your profile</p>
+            </div>
+          </div>
+
+          {linkedinAccount ? (
+            <div className="flex items-center gap-3 rounded-2xl bg-white/60 p-3">
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1.5">
+                  <span className="truncate text-sm font-bold text-ink">
+                    {linkedinAccount.name ?? "LinkedIn member"}
+                  </span>
+                  <span className="inline-flex items-center gap-1 rounded-full bg-cyan-100 px-2 py-0.5 text-[11px] font-semibold text-cyan-700">
+                    <CheckIcon className="h-3 w-3" /> Connected
+                  </span>
+                </div>
+                <p className="truncate text-xs text-ink-soft">LinkedIn profile</p>
+              </div>
+              <ChannelDisconnectButton
+                platform="linkedin"
+                id={linkedinAccount.id}
+                name={linkedinAccount.name ?? "LinkedIn"}
+              />
+            </div>
+          ) : (
+            <div className="rounded-2xl bg-white/60 p-4 text-center">
+              <p className="mb-3 text-sm text-ink-soft">
+                Connect LinkedIn to publish posts from 9share.
+              </p>
+              <LinkedInConnectButton />
+            </div>
+          )}
+        </div>
+
+        <RedNoteChannelCard />
+        <WeChatChannelCard />
       </div>
     </div>
   );
