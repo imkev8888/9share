@@ -222,3 +222,89 @@ alter table public.automation_logs
 -- Which of our comments is pinned on this post (app + best-effort Graph pin).
 alter table public.automations
   add column if not exists pinned_comment_id text;
+
+-- ============================================================================
+-- Cross Post + RBAC (see migrations/20260804_user_profiles_and_cross_post.sql)
+-- ============================================================================
+
+create table if not exists public.user_profiles (
+  user_id uuid primary key references auth.users (id) on delete cascade,
+  access_automation boolean not null default true,
+  access_platform_sync_post boolean not null default false,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.cross_posts (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users (id) on delete cascade,
+  caption text not null default '',
+  title text,
+  tags text[] not null default '{}',
+  media_type text not null default 'image',
+  status text not null default 'draft',
+  scheduled_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.cross_post_media (
+  id uuid primary key default gen_random_uuid(),
+  cross_post_id uuid not null references public.cross_posts (id) on delete cascade,
+  storage_path text not null,
+  public_url text,
+  mime text,
+  width integer,
+  height integer,
+  duration_sec numeric,
+  sort_order integer not null default 0,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.cross_post_targets (
+  id uuid primary key default gen_random_uuid(),
+  cross_post_id uuid not null references public.cross_posts (id) on delete cascade,
+  platform text not null,
+  account_ref text,
+  status text not null default 'queued',
+  progress integer not null default 0,
+  error text,
+  external_post_id text,
+  permalink text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.threads_accounts (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users (id) on delete cascade,
+  threads_user_id text not null unique,
+  username text,
+  name text,
+  access_token text not null,
+  token_expires_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.linkedin_accounts (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users (id) on delete cascade,
+  linkedin_member_urn text not null unique,
+  name text,
+  access_token text not null,
+  refresh_token text,
+  token_expires_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.mcp_connections (
+  id uuid primary key default gen_random_uuid(),
+  platform text not null unique,
+  status text not null default 'unknown',
+  label text,
+  last_checked_at timestamptz,
+  meta jsonb not null default '{}'::jsonb,
+  updated_at timestamptz not null default now()
+);

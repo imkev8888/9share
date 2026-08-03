@@ -287,7 +287,13 @@ function ActivityRow({
             commentId={log.comment_id}
             logId={log.id}
             target="comment"
-            onSaved={(text) => onUpdated({ ...log, comment_text: text })}
+            onSaved={(text, newCommentId) =>
+              onUpdated({
+                ...log,
+                comment_text: text,
+                ...(newCommentId ? { comment_id: newCommentId } : {}),
+              })
+            }
             onDeleted={() => onDeleted(log.id)}
             onError={onError}
           />
@@ -318,8 +324,12 @@ function ActivityRow({
                 public_reply_text: text ?? log.public_reply_text,
               })
             }
-            onSaved={(text) =>
-              onUpdated({ ...log, public_reply_text: text })
+            onSaved={(text, newCommentId) =>
+              onUpdated({
+                ...log,
+                public_reply_text: text,
+                ...(newCommentId ? { public_reply_id: newCommentId } : {}),
+              })
             }
             onDeleted={() => onReplyCleared(log.id)}
             onError={onError}
@@ -394,7 +404,7 @@ function OwnCommentBlock({
   logId: string;
   target: "comment" | "public_reply";
   onResolved?: (id: string, text: string | null) => void;
-  onSaved: (text: string) => void;
+  onSaved: (text: string, newCommentId?: string) => void;
   onDeleted: () => void;
   onError: (msg: string) => void;
 }) {
@@ -449,7 +459,13 @@ function OwnCommentBlock({
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Couldn't update comment");
-      onSaved(editText.trim());
+      if (typeof data.commentId === "string") {
+        setWorkingId(data.commentId);
+      }
+      onSaved(
+        editText.trim(),
+        typeof data.commentId === "string" ? data.commentId : undefined,
+      );
       setEditing(false);
     } catch (err) {
       onError(err instanceof Error ? err.message : "Couldn't update comment");

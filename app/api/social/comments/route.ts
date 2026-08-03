@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import {
   createMediaComment,
   deleteComment,
-  editComment,
+  replaceMediaComment,
 } from "@/lib/instagram";
 import {
   createFacebookComment,
@@ -193,8 +193,10 @@ export async function PATCH(request: NextRequest) {
 
   const platform = automation.platform === "facebook" ? "facebook" : "instagram";
 
+  let newCommentId = body.commentId;
+
   if (platform === "instagram") {
-    if (!automation.account_id) {
+    if (!automation.account_id || !automation.ig_media_id) {
       return NextResponse.json({ error: "No Instagram account" }, { status: 400 });
     }
     const { data: account } = await supabase
@@ -207,17 +209,20 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: "Account not found" }, { status: 404 });
     }
 
-    const result = await editComment(
+    // IG has no in-place edit — replace with a new comment.
+    const result = await replaceMediaComment(
+      automation.ig_media_id,
       body.commentId,
       message,
       account.access_token,
     );
-    if (!result.ok) {
+    if (!result.ok || !result.id) {
       return NextResponse.json(
         { error: result.error || "Failed to update comment" },
         { status: 502 },
       );
     }
+    newCommentId = result.id;
   } else {
     if (!automation.fb_page_id) {
       return NextResponse.json({ error: "No Facebook Page" }, { status: 400 });
@@ -238,16 +243,36 @@ export async function PATCH(request: NextRequest) {
       page.page_access_token,
     );
     if (!result.ok) {
-      return NextResponse.json(
-        { error: result.error || "Failed to update comment" },
-        { status: 502 },
+      // Fallback: some Page configs reject message updates — replace instead.
+      const created = await createFacebookComment(
+        automation.ig_media_id!,
+        message,
+        page.page_access_token,
       );
+      if (!created.ok || !created.id) {
+        return NextResponse.json(
+          { error: result.error || created.error || "Failed to update comment" },
+          { status: 502 },
+        );
+      }
+      const deleted = await deleteFacebookComment(
+        body.commentId,
+        page.page_access_token,
+      );
+      if (!deleted.ok) {
+        await deleteFacebookComment(created.id, page.page_access_token);
+        return NextResponse.json(
+          { error: deleted.error || "Failed to replace comment" },
+          { status: 502 },
+        );
+      }
+      newCommentId = created.id;
     }
   }
 
   const q = supabase
     .from("automation_logs")
-    .update({ comment_text: message })
+    .update({ comment_text: message, comment_id: newCommentId })
     .eq("user_id", user.id)
     .eq("source", "manual");
   if (body.logId) {
@@ -256,7 +281,7 @@ export async function PATCH(request: NextRequest) {
     await q.eq("comment_id", body.commentId);
   }
 
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, commentId: newCommentId });
 }
 
 /**

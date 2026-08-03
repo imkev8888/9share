@@ -371,7 +371,13 @@ function PostAnnouncement({
       if (!res.ok) throw new Error(data.error || "Couldn't update");
       onChange(
         comments.map((c) =>
-          c.id === row.id ? { ...c, comment_text: editDraft.trim() } : c,
+          c.id === row.id
+            ? {
+                ...c,
+                comment_text: editDraft.trim(),
+                comment_id: (data.commentId as string | undefined) ?? c.comment_id,
+              }
+            : c,
         ),
       );
       setEditingId(null);

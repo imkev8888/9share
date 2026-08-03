@@ -21,7 +21,7 @@ const GRAPH = "https://graph.facebook.com";
 const GRAPH_VERSION = "v23.0";
 const OAUTH_DIALOG = `https://www.facebook.com/${GRAPH_VERSION}/dialog/oauth`;
 
-/** Permissions 9share needs for Page comment automation + private replies. */
+/** Permissions 9share needs for Page comment automation + cross-post. */
 export const FB_SCOPES = [
   "pages_show_list",
   "pages_manage_metadata",
@@ -29,6 +29,7 @@ export const FB_SCOPES = [
   "pages_read_user_content",
   "pages_messaging",
   "pages_manage_engagement",
+  "pages_manage_posts",
 ] as const;
 
 function appId() {

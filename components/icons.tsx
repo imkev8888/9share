@@ -178,3 +178,33 @@ export const ExternalLinkIcon = (p: SVGProps<SVGSVGElement>) => (
     <line x1="10" y1="14" x2="21" y2="3" />
   </svg>
 );
+
+export const ThreadsIcon = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base} {...p}>
+    <path d="M12 2c-2 0-3.5 1.2-4.5 3.1C6.5 3.2 5 2 3 2 2 8 4 14 12 22c8-8 10-14 9-20-2 0-3.5 1.2-4.5 3.1C15.5 3.2 14 2 12 2z" />
+  </svg>
+);
+
+export const LinkedInIcon = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base} {...p}>
+    <path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-4 0v7h-4v-7a6 6 0 0 1 6-6z" />
+    <rect x="2" y="9" width="4" height="12" />
+    <circle cx="4" cy="4" r="2" />
+  </svg>
+);
+
+export const RedNoteIcon = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base} {...p}>
+    <rect x="3" y="3" width="18" height="18" rx="4" />
+    <path d="M8 12h8M8 16h5" />
+  </svg>
+);
+
+export const WeChatIcon = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base} {...p}>
+    <path d="M9 11a1 1 0 1 0 0-2 1 1 0 0 0 0 2z" fill="currentColor" stroke="none" />
+    <path d="M15 11a1 1 0 1 0 0-2 1 1 0 0 0 0 2z" fill="currentColor" stroke="none" />
+    <path d="M7.5 4C4.5 4 2 6 2 8.5c0 1.3.7 2.5 1.8 3.3L3 14l2.5-1.2c.8.2 1.6.3 2.5.3 3 0 5.5-2 5.5-4.5S10.5 4 7.5 4z" />
+    <path d="M16.5 9c-2.5 0-4.5 1.5-4.5 3.5 0 2 2 3.5 4.5 3.5.7 0 1.4-.1 2-.3L20 17l-.8-2.5c.8-.7 1.3-1.7 1.3-2.8C20.5 10.5 18.8 9 16.5 9z" />
+  </svg>
+);

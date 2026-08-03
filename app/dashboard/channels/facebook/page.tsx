@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { cookies } from "next/headers";
-import { requireUser } from "@/lib/auth";
+import { requireAnyProductAccess } from "@/lib/product-gate";
 import { getPages } from "@/lib/facebook";
 import { FacebookPagePicker } from "@/components/facebook-page-picker";
 import { FacebookIcon } from "@/components/icons";
@@ -11,7 +11,7 @@ import { FacebookIcon } from "@/components/icons";
  * connect instead of us auto-connecting everything.
  */
 export default async function ChooseFacebookPagesPage() {
-  const { supabase, user } = await requireUser();
+  const { supabase, user } = await requireAnyProductAccess();
 
   const cookieStore = await cookies();
   const userToken = cookieStore.get("fb_user_token")?.value;

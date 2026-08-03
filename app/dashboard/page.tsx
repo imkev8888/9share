@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { requireUser } from "@/lib/auth";
+import { requireAutomationAccess } from "@/lib/product-gate";
 import { ConnectButton } from "@/components/connect-button";
 import { StatusPill } from "@/components/status-pill";
 import {
@@ -19,7 +19,7 @@ export default async function OverviewPage({
   searchParams: Promise<{ connect?: string; reason?: string }>;
 }) {
   const sp = await searchParams;
-  const { supabase, user } = await requireUser();
+  const { supabase, user } = await requireAutomationAccess();
 
   const [
     { data: account },

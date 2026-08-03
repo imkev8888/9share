@@ -17,11 +17,12 @@ const GRAPH_VERSION = "v23.0";
 const OAUTH_AUTHORIZE = "https://www.instagram.com/oauth/authorize";
 const OAUTH_TOKEN = "https://api.instagram.com/oauth/access_token";
 
-/** Permissions 9share needs for comment automation + DMs. */
+/** Permissions 9share needs for comment automation + DMs + cross-post. */
 export const SCOPES = [
   "instagram_business_basic",
   "instagram_business_manage_messages",
   "instagram_business_manage_comments",
+  "instagram_business_content_publish",
 ] as const;
 
 function appId() {
@@ -356,22 +357,64 @@ export async function createMediaComment(
   return { ok: true, id: data.id as string | undefined };
 }
 
-/** Update an existing comment's text. */
-export async function editComment(
-  commentId: string,
+/**
+ * Instagram Graph does not support editing comment text (POST /{id} only
+ * accepts `hide`). Replace by posting a new top-level comment, then deleting
+ * the old one. Rolls back the new comment if delete fails.
+ */
+export async function replaceMediaComment(
+  mediaId: string,
+  oldCommentId: string,
   message: string,
   token: string,
-): Promise<{ ok: boolean; error?: string }> {
-  const params = new URLSearchParams({ message, access_token: token });
-  const res = await fetch(
-    `${GRAPH}/${GRAPH_VERSION}/${commentId}?${params.toString()}`,
-    { method: "POST" },
-  );
-  const data = await res.json();
-  if (!res.ok) {
-    return { ok: false, error: graphErrorMessage(data) };
+): Promise<{ ok: boolean; id?: string; error?: string }> {
+  const created = await createMediaComment(mediaId, message, token);
+  if (!created.ok || !created.id) {
+    return {
+      ok: false,
+      error: created.error || "Failed to post updated comment",
+    };
   }
-  return { ok: true };
+
+  const deleted = await deleteComment(oldCommentId, token);
+  if (!deleted.ok) {
+    await deleteComment(created.id, token);
+    return {
+      ok: false,
+      error: deleted.error || "Failed to replace comment",
+    };
+  }
+
+  return { ok: true, id: created.id };
+}
+
+/**
+ * Same replace strategy for a public reply under someone else's comment.
+ */
+export async function replaceCommentReply(
+  parentCommentId: string,
+  oldReplyId: string,
+  message: string,
+  token: string,
+): Promise<{ ok: boolean; id?: string; error?: string }> {
+  const created = await replyToComment(parentCommentId, message, token);
+  if (!created.ok || !created.id) {
+    return {
+      ok: false,
+      error: created.error || "Failed to post updated reply",
+    };
+  }
+
+  const deleted = await deleteComment(oldReplyId, token);
+  if (!deleted.ok) {
+    await deleteComment(created.id, token);
+    return {
+      ok: false,
+      error: deleted.error || "Failed to replace reply",
+    };
+  }
+
+  return { ok: true, id: created.id };
 }
 
 /** Delete a comment on media owned by the connected account. */

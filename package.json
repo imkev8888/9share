@@ -2,11 +2,15 @@
   "name": "9share",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "dev:node22": "PATH=\"/usr/local/opt/node@22/bin:$PATH\" next dev"
   },
   "dependencies": {
     "@supabase/ssr": "^0.5.2",
