@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { useCallback, useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
@@ -14,6 +13,7 @@ import {
   MessageIcon,
   SparkIcon,
 } from "@/components/icons";
+import { MediaThumb } from "@/components/media-thumb";
 
 const TEMPLATES = [
   {
@@ -431,24 +431,18 @@ export function AutomationBuilder({
                           : "Select this post"
                       }
                     >
-                      {m.thumb ? (
-                        <Image
-                          src={m.thumb}
-                          alt={m.caption?.slice(0, 30) ?? "post"}
-                          fill
-                          sizes="120px"
-                          className="object-cover object-center"
-                        />
-                      ) : (
-                        <div className="flex h-full w-full flex-col items-center justify-center gap-1 bg-brand-100 p-2 text-brand-400">
-                          <MessageIcon className="h-6 w-6 shrink-0" />
-                          {m.caption && (
-                            <span className="line-clamp-2 text-center text-[10px] leading-tight text-brand-500">
-                              {m.caption}
-                            </span>
-                          )}
-                        </div>
-                      )}
+                      <MediaThumb
+                        src={m.thumb}
+                        alt={m.caption?.slice(0, 30) ?? "post"}
+                        accountId={
+                          m.platform === "instagram"
+                            ? instagram?.accountId
+                            : null
+                        }
+                        mediaId={m.platform === "instagram" ? m.id : null}
+                        className="absolute inset-0 h-full w-full object-cover object-center"
+                        fallbackClassName="absolute inset-0 flex h-full w-full flex-col items-center justify-center gap-1 bg-brand-100 p-2 text-brand-400"
+                      />
                       {isSel && (
                         <span className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-brand-500 text-white">
                           <CheckIcon className="h-3 w-3" />
@@ -638,19 +632,16 @@ export function AutomationBuilder({
                     key={m.id}
                     className="relative h-10 w-10 shrink-0 overflow-hidden rounded-lg"
                   >
-                    {m.thumb ? (
-                      <Image
-                        src={m.thumb}
-                        alt=""
-                        fill
-                        sizes="40px"
-                        className="object-cover"
-                      />
-                    ) : (
-                      <div className="flex h-full w-full items-center justify-center bg-brand-100 text-brand-400">
-                        <MessageIcon className="h-4 w-4" />
-                      </div>
-                    )}
+                    <MediaThumb
+                      src={m.thumb}
+                      accountId={
+                        m.platform === "instagram"
+                          ? instagram?.accountId
+                          : null
+                      }
+                      mediaId={m.platform === "instagram" ? m.id : null}
+                      className="h-full w-full object-cover"
+                    />
                     <span
                       className={`absolute bottom-0 right-0 flex h-4 w-4 items-center justify-center rounded-tl-md text-white ${
                         m.platform === "facebook"

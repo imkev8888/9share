@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 async function requireUser() {
   const supabase = await createClient();
@@ -189,26 +190,60 @@ async function saveAutomation(
     is_active: true,
   };
 
+  // Prefer update when this post already has a campaign for the account.
+  // Lookup by account+media (not only user_id) so a reconnected account
+  // doesn't try to insert a duplicate and hit the unique constraint.
   const { data: existing, error: lookupError } = await supabase
     .from("automations")
     .select("id")
     .eq("account_id", accountId)
     .eq("ig_media_id", media.igMediaId)
-    .eq("user_id", userId)
     .maybeSingle();
 
   if (lookupError) return { error: formatDatabaseError(lookupError) };
 
-  const { error } = existing
-    ? await supabase
+  if (existing) {
+    const { error } = await supabase
+      .from("automations")
+      .update(payload)
+      .eq("id", existing.id)
+      .eq("account_id", accountId);
+    if (error) return { error: formatDatabaseError(error) };
+    return { ok: true };
+  }
+
+  const { error } = await supabase.from("automations").insert(payload);
+  if (!error) return { ok: true };
+
+  // Row exists but RLS hid it (account reconnected under a new login).
+  // Re-home + update via service role so the user isn't stuck.
+  if (error.code === "23505") {
+    const admin = createAdminClient();
+    const { data: orphan } = await admin
+      .from("automations")
+      .select("id")
+      .eq("account_id", accountId)
+      .eq("ig_media_id", media.igMediaId)
+      .maybeSingle();
+    if (orphan) {
+      const { error: fixError } = await admin
         .from("automations")
         .update(payload)
-        .eq("id", existing.id)
-        .eq("user_id", userId)
-    : await supabase.from("automations").insert(payload);
+        .eq("id", orphan.id);
+      if (fixError) return { error: formatDatabaseError(fixError) };
+      await admin
+        .from("automation_logs")
+        .update({ user_id: userId })
+        .eq("account_id", accountId);
+      return { ok: true };
+    }
+    return {
+      error:
+        "This post already has an automation. Open Automations to edit it, or reconnect Instagram if the list looks empty.",
+    };
+  }
 
-  if (error) return { error: formatDatabaseError(error) };
-  return { ok: true };
+  return { error: formatDatabaseError(error) };
 }
 
 export interface FacebookPostInput {

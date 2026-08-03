@@ -65,6 +65,13 @@ create table if not exists public.automation_logs (
   comment_text        text,
   status              text not null default 'sent', -- sent | failed | skipped
   error               text,
+  -- Personalized DM body that was actually sent (Private Reply).
+  dm_text             text,
+  -- Public reply we left under the comment (if any).
+  public_reply_text   text,
+  public_reply_id     text,
+  -- 'automation' = webhook-triggered; 'manual' = posted from Tracking.
+  source              text not null default 'automation',
   created_at          timestamptz not null default now()
 );
 
@@ -115,7 +122,7 @@ create policy "own automations" on public.automations
 
 drop policy if exists "own logs" on public.automation_logs;
 create policy "own logs" on public.automation_logs
-  for select using (auth.uid() = user_id);
+  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
 -- ============================================================================
 -- Facebook Pages support (comment-to-Messenger automation)
@@ -196,3 +203,22 @@ alter table public.facebook_pages enable row level security;
 drop policy if exists "own pages" on public.facebook_pages;
 create policy "own pages" on public.facebook_pages
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+-- ---------------------------------------------------------------------------
+-- Activity moderation fields on automation_logs (additive).
+-- ---------------------------------------------------------------------------
+alter table public.automation_logs
+  add column if not exists dm_text text;
+
+alter table public.automation_logs
+  add column if not exists public_reply_text text;
+
+alter table public.automation_logs
+  add column if not exists public_reply_id text;
+
+alter table public.automation_logs
+  add column if not exists source text not null default 'automation';
+
+-- Which of our comments is pinned on this post (app + best-effort Graph pin).
+alter table public.automations
+  add column if not exists pinned_comment_id text;

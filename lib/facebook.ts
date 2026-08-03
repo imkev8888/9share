@@ -269,11 +269,64 @@ export async function replyToFacebookComment(
   commentId: string,
   message: string,
   pageToken: string,
-): Promise<{ ok: boolean; error?: string }> {
+): Promise<{ ok: boolean; id?: string; error?: string }> {
   const params = new URLSearchParams({ message, access_token: pageToken });
   const res = await fetch(
     `${GRAPH}/${GRAPH_VERSION}/${commentId}/comments?${params.toString()}`,
     { method: "POST" },
+  );
+  const data = await res.json();
+  if (!res.ok) {
+    return { ok: false, error: data?.error?.message || JSON.stringify(data) };
+  }
+  return { ok: true, id: typeof data.id === "string" ? data.id : undefined };
+}
+
+/** Post a top-level comment on a Page post. */
+export async function createFacebookComment(
+  postId: string,
+  message: string,
+  pageToken: string,
+): Promise<{ ok: boolean; id?: string; error?: string }> {
+  const params = new URLSearchParams({ message, access_token: pageToken });
+  const res = await fetch(
+    `${GRAPH}/${GRAPH_VERSION}/${postId}/comments?${params.toString()}`,
+    { method: "POST" },
+  );
+  const data = await res.json();
+  if (!res.ok) {
+    return { ok: false, error: data?.error?.message || JSON.stringify(data) };
+  }
+  return { ok: true, id: typeof data.id === "string" ? data.id : undefined };
+}
+
+/** Edit a Page comment we posted. */
+export async function editFacebookComment(
+  commentId: string,
+  message: string,
+  pageToken: string,
+): Promise<{ ok: boolean; error?: string }> {
+  const params = new URLSearchParams({ message, access_token: pageToken });
+  const res = await fetch(
+    `${GRAPH}/${GRAPH_VERSION}/${commentId}?${params.toString()}`,
+    { method: "POST" },
+  );
+  const data = await res.json();
+  if (!res.ok) {
+    return { ok: false, error: data?.error?.message || JSON.stringify(data) };
+  }
+  return { ok: true };
+}
+
+/** Delete a Page comment. */
+export async function deleteFacebookComment(
+  commentId: string,
+  pageToken: string,
+): Promise<{ ok: boolean; error?: string }> {
+  const params = new URLSearchParams({ access_token: pageToken });
+  const res = await fetch(
+    `${GRAPH}/${GRAPH_VERSION}/${commentId}?${params.toString()}`,
+    { method: "DELETE" },
   );
   const data = await res.json();
   if (!res.ok) {

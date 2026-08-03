@@ -1,9 +1,9 @@
 "use client";
 
-import Image from "next/image";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { CheckIcon, FacebookIcon } from "@/components/icons";
+import { MediaThumb } from "@/components/media-thumb";
 
 export interface PickablePage {
   id: string;
@@ -74,13 +74,12 @@ export function FacebookPagePicker({ pages }: { pages: PickablePage[] }) {
                 }`}
               >
                 {page.pictureUrl ? (
-                  <Image
-                    src={page.pictureUrl}
-                    alt=""
-                    width={44}
-                    height={44}
-                    className="h-11 w-11 shrink-0 rounded-full object-cover"
-                  />
+                  <div className="h-11 w-11 shrink-0 overflow-hidden rounded-full bg-[#1877F2]">
+                    <MediaThumb
+                      src={page.pictureUrl}
+                      className="h-full w-full object-cover"
+                    />
+                  </div>
                 ) : (
                   <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#1877F2] text-white">
                     <FacebookIcon className="h-5 w-5" />

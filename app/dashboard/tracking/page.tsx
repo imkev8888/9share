@@ -10,18 +10,18 @@ export default async function TrackingPage() {
     supabase
       .from("automations")
       .select(
-        "id, name, keyword, dm_message, public_reply, media_thumbnail, media_permalink, is_active, sent_count, created_at, platform",
+        "id, name, keyword, dm_message, public_reply, media_thumbnail, media_permalink, is_active, sent_count, created_at, platform, ig_media_id, account_id, fb_page_id",
       )
       .eq("user_id", user.id)
       .order("created_at", { ascending: false }),
     supabase
       .from("automation_logs")
       .select(
-        "id, automation_id, commenter_username, comment_text, status, error, created_at",
+        "id, automation_id, comment_id, commenter_username, comment_text, status, error, source, created_at",
       )
       .eq("user_id", user.id)
       .order("created_at", { ascending: false })
-      .limit(500),
+      .limit(200),
   ]);
 
   // Group interactions under the post (automation) they belong to.
@@ -31,10 +31,12 @@ export default async function TrackingPage() {
     if (!byAutomation.has(key)) byAutomation.set(key, []);
     byAutomation.get(key)!.push({
       id: log.id,
+      comment_id: log.comment_id,
       commenter_username: log.commenter_username,
       comment_text: log.comment_text,
       status: log.status,
       error: log.error,
+      source: log.source,
       created_at: log.created_at,
     });
   }
@@ -51,6 +53,9 @@ export default async function TrackingPage() {
       publicReply: a.public_reply,
       isActive: a.is_active,
       platform: a.platform,
+      mediaId: a.ig_media_id,
+      accountId: a.account_id,
+      fbPageId: a.fb_page_id,
       interactions,
       counts: countByStatus(interactions),
     };
@@ -69,6 +74,9 @@ export default async function TrackingPage() {
       publicReply: null,
       isActive: false,
       platform: null,
+      mediaId: null,
+      accountId: null,
+      fbPageId: null,
       interactions: orphan,
       counts: countByStatus(orphan),
     });

@@ -1,17 +1,79 @@
 import { requireUser } from "@/lib/auth";
-import { StatusPill } from "@/components/status-pill";
-import { PlatformBadge } from "@/components/platform-badge";
-import { MessageIcon } from "@/components/icons";
+import {
+  ActivityFeed,
+  type ActivityLog,
+  type ActivityPost,
+} from "@/components/activity-feed";
 
 export default async function LogsPage() {
   const { supabase, user } = await requireUser();
 
-  const { data: logs } = await supabase
-    .from("automation_logs")
-    .select("*")
-    .eq("user_id", user.id)
-    .order("created_at", { ascending: false })
-    .limit(100);
+  const [{ data: logs }, { data: igAccount }, { data: automations }] =
+    await Promise.all([
+      supabase
+        .from("automation_logs")
+        .select(
+          "id, automation_id, account_id, comment_id, commenter_username, comment_text, dm_text, public_reply_text, public_reply_id, status, error, source, created_at, fb_page_id",
+        )
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false })
+        .limit(50),
+      supabase
+        .from("instagram_accounts")
+        .select("id, username")
+        .eq("user_id", user.id)
+        .maybeSingle(),
+      supabase
+        .from("automations")
+        .select(
+          "id, ig_media_id, name, media_thumbnail, media_permalink, media_caption, platform, account_id, dm_message, public_reply",
+        )
+        .eq("user_id", user.id)
+        .eq("platform", "instagram")
+        .order("created_at", { ascending: false }),
+    ]);
+
+  const automationById = new Map(
+    (automations ?? []).map((a) => [a.id, a] as const),
+  );
+
+  const posts: ActivityPost[] = (automations ?? [])
+    .filter((a) => a.account_id && a.ig_media_id)
+    .map((a) => ({
+      automationId: a.id,
+      mediaId: a.ig_media_id,
+      name: a.name,
+      thumbnail: a.media_thumbnail,
+      permalink: a.media_permalink,
+      caption: a.media_caption,
+      dmTemplate: a.dm_message,
+      publicReplyTemplate: a.public_reply,
+      accountId: a.account_id,
+    }));
+
+  const enrichedLogs: ActivityLog[] = (logs ?? []).map((log) => {
+    const auto = log.automation_id
+      ? automationById.get(log.automation_id)
+      : undefined;
+    return {
+      ...(log as ActivityLog),
+      dm_template: auto?.dm_message ?? null,
+      public_reply_template: auto?.public_reply ?? null,
+      public_reply_text:
+        log.public_reply_text ||
+        (log.status === "sent" && auto?.public_reply?.trim()
+          ? auto.public_reply
+          : null),
+      dm_text:
+        log.dm_text ||
+        (log.status === "sent" && auto?.dm_message
+          ? auto.dm_message.replaceAll(
+              "{{username}}",
+              log.commenter_username ? `@${log.commenter_username}` : "@there",
+            )
+          : null),
+    };
+  });
 
   return (
     <div className="space-y-6">
@@ -19,55 +81,14 @@ export default async function LogsPage() {
         <h1 className="text-2xl font-extrabold tracking-tight text-ink">
           Activity
         </h1>
-        <p className="text-sm text-ink-soft">
-          Every comment 9share processed — sent, skipped or failed.
-        </p>
       </div>
 
-      {logs && logs.length > 0 ? (
-        <div className="glass overflow-hidden rounded-3xl">
-          <ul className="divide-y divide-white/60">
-            {logs.map((log) => (
-              <li
-                key={log.id}
-                className="flex items-start justify-between gap-4 p-4 sm:px-6"
-              >
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <p className="font-semibold text-ink">
-                      @{log.commenter_username ?? "someone"}
-                    </p>
-                    <PlatformBadge
-                      platform={log.fb_page_id ? "facebook" : "instagram"}
-                    />
-                    <StatusPill status={log.status} />
-                  </div>
-                  <p className="mt-0.5 truncate text-sm text-ink-soft">
-                    {log.comment_text ?? "—"}
-                  </p>
-                  {log.status === "failed" && log.error && (
-                    <p className="mt-1 text-xs text-red-600">{log.error}</p>
-                  )}
-                </div>
-                <time className="shrink-0 text-xs text-ink-soft">
-                  {new Date(log.created_at).toLocaleString()}
-                </time>
-              </li>
-            ))}
-          </ul>
-        </div>
-      ) : (
-        <div className="glass-strong rounded-3xl p-10 text-center">
-          <div className="mx-auto mb-4 inline-flex rounded-2xl bg-brand-50 p-3 text-brand-500">
-            <MessageIcon className="h-7 w-7" />
-          </div>
-          <h2 className="text-lg font-bold text-ink">No activity yet</h2>
-          <p className="mx-auto mt-2 max-w-sm text-sm text-ink-soft">
-            Once people start commenting on your automated posts, every DM shows
-            up here in real time.
-          </p>
-        </div>
-      )}
+      <ActivityFeed
+        accountId={igAccount?.id ?? null}
+        username={igAccount?.username ?? null}
+        posts={posts}
+        initialLogs={enrichedLogs}
+      />
     </div>
   );
 }

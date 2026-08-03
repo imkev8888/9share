@@ -234,17 +234,8 @@ async function handleComment(igAccountId: string, comment: CommentValue) {
     account.access_token,
   );
 
-  await admin.from("automation_logs").insert({
-    automation_id: automation.id,
-    account_id: account.id,
-    user_id: account.user_id,
-    comment_id: comment.id,
-    commenter_id: comment.from?.id ?? null,
-    commenter_username: comment.from?.username ?? null,
-    comment_text: comment.text ?? null,
-    status: result.ok ? "sent" : "failed",
-    error: result.ok ? null : result.error,
-  });
+  let publicReplyText: string | null = null;
+  let publicReplyId: string | null = null;
 
   if (result.ok) {
     await admin
@@ -254,13 +245,35 @@ async function handleComment(igAccountId: string, comment: CommentValue) {
 
     // Optional public reply under the comment.
     if (automation.public_reply?.trim()) {
-      await replyToComment(
+      publicReplyText = personalize(automation.public_reply, comment);
+      const reply = await replyToComment(
         comment.id,
-        personalize(automation.public_reply, comment),
+        publicReplyText,
         account.access_token,
-      ).catch(() => {});
+      ).catch(() => ({ ok: false as const, id: undefined, error: "reply failed" }));
+      if (reply.ok && reply.id) {
+        publicReplyId = reply.id;
+      } else if (!reply.ok) {
+        publicReplyText = null;
+      }
     }
   }
+
+  await admin.from("automation_logs").insert({
+    automation_id: automation.id,
+    account_id: account.id,
+    user_id: account.user_id,
+    comment_id: comment.id,
+    commenter_id: comment.from?.id ?? null,
+    commenter_username: comment.from?.username ?? null,
+    comment_text: comment.text ?? null,
+    dm_text: result.ok ? message : null,
+    public_reply_text: publicReplyText,
+    public_reply_id: publicReplyId,
+    source: "automation",
+    status: result.ok ? "sent" : "failed",
+    error: result.ok ? null : result.error,
+  });
 }
 
 /** Replace simple tokens in templates. */

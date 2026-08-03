@@ -52,7 +52,7 @@ export async function GET(request: NextRequest) {
 
     // Service role: token storage shouldn't depend on the RLS session here.
     const admin = createAdminClient();
-    const { error: upsertError } = await admin
+    const { data: accountRow, error: upsertError } = await admin
       .from("instagram_accounts")
       .upsert(
         {
@@ -65,9 +65,26 @@ export async function GET(request: NextRequest) {
           token_expires_at: expiresAt,
         },
         { onConflict: "ig_user_id" },
-      );
+      )
+      .select("id")
+      .single();
 
     if (upsertError) return fail(upsertError.message);
+
+    // Reconnecting can move the IG account row to a new 9share user while
+    // old automations stay on the previous user_id. RLS then hides them
+    // (empty Automations page) but the unique (account_id, ig_media_id)
+    // constraint still blocks creating a new one. Re-home them.
+    if (accountRow?.id) {
+      await admin
+        .from("automations")
+        .update({ user_id: user.id })
+        .eq("account_id", accountRow.id);
+      await admin
+        .from("automation_logs")
+        .update({ user_id: user.id })
+        .eq("account_id", accountRow.id);
+    }
 
     const res = NextResponse.redirect(
       new URL("/dashboard?connect=success", appUrl),

@@ -1,9 +1,9 @@
-import Image from "next/image";
 import { requireUser } from "@/lib/auth";
 import { ConnectButton } from "@/components/connect-button";
 import { FacebookConnectButton } from "@/components/facebook-connect-button";
 import { ChannelDisconnectButton } from "@/components/channel-disconnect-button";
 import { CheckIcon, FacebookIcon, InstagramIcon } from "@/components/icons";
+import { MediaThumb } from "@/components/media-thumb";
 
 export default async function ChannelsPage({
   searchParams,
@@ -68,19 +68,14 @@ export default async function ChannelsPage({
 
           {igAccount ? (
             <div className="flex items-center gap-3 rounded-2xl bg-white/60 p-3">
-              {igAccount.profile_picture_url ? (
-                <Image
+              <div className="h-10 w-10 shrink-0 overflow-hidden rounded-full bg-gradient-to-br from-brand-400 to-brand-600">
+                <MediaThumb
                   src={igAccount.profile_picture_url}
                   alt={igAccount.username ?? "profile"}
-                  width={40}
-                  height={40}
-                  className="h-10 w-10 shrink-0 rounded-full object-cover"
+                  className="h-full w-full object-cover"
+                  fallbackClassName="flex h-full w-full items-center justify-center text-white"
                 />
-              ) : (
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-brand-400 to-brand-600 text-white">
-                  <InstagramIcon className="h-5 w-5" />
-                </div>
-              )}
+              </div>
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-1.5">
                   <span className="truncate text-sm font-bold text-ink">
@@ -131,19 +126,14 @@ export default async function ChannelsPage({
                   key={page.id}
                   className="flex items-center gap-3 rounded-2xl bg-white/60 p-3"
                 >
-                  {page.picture_url ? (
-                    <Image
+                  <div className="h-10 w-10 shrink-0 overflow-hidden rounded-full bg-[#1877F2]">
+                    <MediaThumb
                       src={page.picture_url}
                       alt={page.page_name ?? "page"}
-                      width={40}
-                      height={40}
-                      className="h-10 w-10 shrink-0 rounded-full object-cover"
+                      className="h-full w-full object-cover"
+                      fallbackClassName="flex h-full w-full items-center justify-center text-white"
                     />
-                  ) : (
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#1877F2] text-white">
-                      <FacebookIcon className="h-5 w-5" />
-                    </div>
-                  )}
+                  </div>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-1.5">
                       <span className="truncate text-sm font-bold text-ink">

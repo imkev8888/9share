@@ -241,17 +241,8 @@ async function handleComment(pageId: string, value: FeedValue) {
     page.page_access_token,
   );
 
-  await admin.from("automation_logs").insert({
-    automation_id: automation.id,
-    fb_page_id: page.id,
-    user_id: page.user_id,
-    comment_id: commentId,
-    commenter_id: value.from?.id ?? null,
-    commenter_username: value.from?.name ?? null,
-    comment_text: value.message ?? null,
-    status: result.ok ? "sent" : "failed",
-    error: result.ok ? null : result.error,
-  });
+  let publicReplyText: string | null = null;
+  let publicReplyId: string | null = null;
 
   if (result.ok) {
     await admin
@@ -261,13 +252,35 @@ async function handleComment(pageId: string, value: FeedValue) {
 
     // Optional public reply under the comment.
     if (automation.public_reply?.trim()) {
-      await replyToFacebookComment(
+      publicReplyText = personalize(automation.public_reply, value);
+      const reply = await replyToFacebookComment(
         commentId,
-        personalize(automation.public_reply, value),
+        publicReplyText,
         page.page_access_token,
-      ).catch(() => {});
+      ).catch(() => ({ ok: false as const, id: undefined }));
+      if (reply.ok && reply.id) {
+        publicReplyId = reply.id;
+      } else if (!reply.ok) {
+        publicReplyText = null;
+      }
     }
   }
+
+  await admin.from("automation_logs").insert({
+    automation_id: automation.id,
+    fb_page_id: page.id,
+    user_id: page.user_id,
+    comment_id: commentId,
+    commenter_id: value.from?.id ?? null,
+    commenter_username: value.from?.name ?? null,
+    comment_text: value.message ?? null,
+    dm_text: result.ok ? message : null,
+    public_reply_text: publicReplyText,
+    public_reply_id: publicReplyId,
+    source: "automation",
+    status: result.ok ? "sent" : "failed",
+    error: result.ok ? null : result.error,
+  });
 }
 
 /**

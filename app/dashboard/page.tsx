@@ -1,5 +1,4 @@
 import Link from "next/link";
-import Image from "next/image";
 import { requireUser } from "@/lib/auth";
 import { ConnectButton } from "@/components/connect-button";
 import { StatusPill } from "@/components/status-pill";
@@ -12,6 +11,7 @@ import {
   PlusIcon,
   TargetIcon,
 } from "@/components/icons";
+import { MediaThumb } from "@/components/media-thumb";
 
 export default async function OverviewPage({
   searchParams,
@@ -39,17 +39,19 @@ export default async function OverviewPage({
       .eq("user_id", user.id),
     supabase
       .from("automations")
-      .select("*", { count: "exact", head: true })
+      .select("id", { count: "exact", head: true })
       .eq("user_id", user.id)
       .eq("is_active", true),
     supabase
       .from("automation_logs")
-      .select("*", { count: "exact", head: true })
+      .select("id", { count: "exact", head: true })
       .eq("user_id", user.id)
       .eq("status", "sent"),
     supabase
       .from("automation_logs")
-      .select("*")
+      .select(
+        "id, commenter_username, comment_text, status, error, created_at, fb_page_id",
+      )
       .eq("user_id", user.id)
       .order("created_at", { ascending: false })
       .limit(6),
@@ -122,19 +124,14 @@ export default async function OverviewPage({
           {/* Account + stats */}
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <div className="glass flex items-center gap-4 rounded-3xl p-5 sm:col-span-2 lg:col-span-1">
-              {account.profile_picture_url ? (
-                <Image
+              <div className="h-14 w-14 shrink-0 overflow-hidden rounded-full bg-gradient-to-br from-brand-400 to-brand-600">
+                <MediaThumb
                   src={account.profile_picture_url}
                   alt={account.username ?? "profile"}
-                  width={56}
-                  height={56}
-                  className="h-14 w-14 rounded-full object-cover"
+                  className="h-full w-full object-cover"
+                  fallbackClassName="flex h-full w-full items-center justify-center text-white"
                 />
-              ) : (
-                <div className="flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-brand-400 to-brand-600 text-white">
-                  <InstagramIcon className="h-6 w-6" />
-                </div>
-              )}
+              </div>
               <div className="min-w-0">
                 <div className="flex items-center gap-1.5">
                   <span className="truncate font-bold text-ink">

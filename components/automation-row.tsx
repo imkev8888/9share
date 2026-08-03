@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { useState, useTransition } from "react";
 import {
@@ -10,11 +9,11 @@ import {
 } from "@/app/dashboard/actions";
 import {
   TrashIcon,
-  MessageIcon,
   PencilIcon,
   CopyIcon,
 } from "@/components/icons";
 import { PlatformBadge } from "@/components/platform-badge";
+import { MediaThumb } from "@/components/media-thumb";
 
 interface Automation {
   id: string;
@@ -27,6 +26,8 @@ interface Automation {
   is_active: boolean;
   sent_count: number;
   platform?: string | null;
+  ig_media_id?: string | null;
+  account_id?: string | null;
 }
 
 export function AutomationRow({ automation }: { automation: Automation }) {
@@ -95,19 +96,13 @@ export function AutomationRow({ automation }: { automation: Automation }) {
     >
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
         <div className="flex min-w-0 flex-1 items-center gap-4">
-          {automation.media_thumbnail ? (
-            <Image
+          <div className="h-14 w-14 shrink-0 overflow-hidden rounded-xl bg-brand-100">
+            <MediaThumb
               src={automation.media_thumbnail}
-              alt=""
-              width={56}
-              height={56}
-              className="h-14 w-14 shrink-0 rounded-xl object-cover"
+              accountId={automation.account_id}
+              mediaId={automation.ig_media_id}
             />
-          ) : (
-            <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-brand-100 text-brand-500">
-              <MessageIcon className="h-6 w-6" />
-            </div>
-          )}
+          </div>
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               <p className="truncate font-bold text-ink">{name}</p>

@@ -252,13 +252,142 @@ export async function replyToComment(
   commentId: string,
   message: string,
   token: string,
-): Promise<{ ok: boolean; error?: string }> {
+): Promise<{ ok: boolean; id?: string; error?: string }> {
   const params = new URLSearchParams({ message, access_token: token });
   const res = await fetch(
     `${GRAPH}/${GRAPH_VERSION}/${commentId}/replies?${params.toString()}`,
     { method: "POST" },
   );
   const data = await res.json();
-  if (!res.ok) return { ok: false, error: JSON.stringify(data) };
+  if (!res.ok) {
+    return { ok: false, error: graphErrorMessage(data) };
+  }
+  return { ok: true, id: typeof data.id === "string" ? data.id : undefined };
+}
+
+export interface IgComment {
+  id: string;
+  text?: string;
+  username?: string;
+  timestamp?: string;
+  hidden?: boolean;
+  like_count?: number;
+  from?: { id?: string; username?: string };
+}
+
+function graphErrorMessage(data: unknown): string {
+  if (data && typeof data === "object") {
+    const err = (data as { error?: { message?: string } }).error;
+    if (err?.message) return err.message;
+  }
+  return JSON.stringify(data);
+}
+
+/** List comments on an IG Media object. */
+export async function getMediaComments(
+  mediaId: string,
+  token: string,
+): Promise<IgComment[]> {
+  const params = new URLSearchParams({
+    fields: "id,text,username,timestamp,hidden,like_count,from",
+    access_token: token,
+  });
+  const res = await fetch(
+    `${GRAPH}/${GRAPH_VERSION}/${mediaId}/comments?${params.toString()}`,
+  );
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(`getMediaComments failed: ${graphErrorMessage(data)}`);
+  }
+  return (data.data ?? []) as IgComment[];
+}
+
+/** List replies under an IG Comment (used to find our public reply id). */
+export async function getCommentReplies(
+  commentId: string,
+  token: string,
+): Promise<IgComment[]> {
+  const params = new URLSearchParams({
+    fields: "id,text,username,timestamp,from",
+    access_token: token,
+  });
+  const res = await fetch(
+    `${GRAPH}/${GRAPH_VERSION}/${commentId}/replies?${params.toString()}`,
+  );
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(`getCommentReplies failed: ${graphErrorMessage(data)}`);
+  }
+  return (data.data ?? []) as IgComment[];
+}
+
+/** Fresh thumbnail/media URL for a media id (CDN links in DB often expire). */
+export async function getMediaThumbnail(
+  mediaId: string,
+  token: string,
+): Promise<string | null> {
+  const params = new URLSearchParams({
+    fields: "thumbnail_url,media_url",
+    access_token: token,
+  });
+  const res = await fetch(
+    `${GRAPH}/${GRAPH_VERSION}/${mediaId}?${params.toString()}`,
+  );
+  const data = await res.json();
+  if (!res.ok) return null;
+  return (data.thumbnail_url || data.media_url || null) as string | null;
+}
+
+/** Post a top-level comment on an IG Media object (as the connected account). */
+export async function createMediaComment(
+  mediaId: string,
+  message: string,
+  token: string,
+): Promise<{ ok: boolean; id?: string; error?: string }> {
+  const params = new URLSearchParams({ message, access_token: token });
+  const res = await fetch(
+    `${GRAPH}/${GRAPH_VERSION}/${mediaId}/comments?${params.toString()}`,
+    { method: "POST" },
+  );
+  const data = await res.json();
+  if (!res.ok) {
+    return { ok: false, error: graphErrorMessage(data) };
+  }
+  return { ok: true, id: data.id as string | undefined };
+}
+
+/** Update an existing comment's text. */
+export async function editComment(
+  commentId: string,
+  message: string,
+  token: string,
+): Promise<{ ok: boolean; error?: string }> {
+  const params = new URLSearchParams({ message, access_token: token });
+  const res = await fetch(
+    `${GRAPH}/${GRAPH_VERSION}/${commentId}?${params.toString()}`,
+    { method: "POST" },
+  );
+  const data = await res.json();
+  if (!res.ok) {
+    return { ok: false, error: graphErrorMessage(data) };
+  }
   return { ok: true };
 }
+
+/** Delete a comment on media owned by the connected account. */
+export async function deleteComment(
+  commentId: string,
+  token: string,
+): Promise<{ ok: boolean; error?: string }> {
+  const params = new URLSearchParams({ access_token: token });
+  const res = await fetch(
+    `${GRAPH}/${GRAPH_VERSION}/${commentId}?${params.toString()}`,
+    { method: "DELETE" },
+  );
+  const data = await res.json();
+  if (!res.ok) {
+    return { ok: false, error: graphErrorMessage(data) };
+  }
+  return { ok: true };
+}
+
