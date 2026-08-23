@@ -4,6 +4,7 @@ import { getMediaPage, type IgMedia } from "@/lib/instagram";
 import { ConnectButton } from "@/components/connect-button";
 import { FacebookConnectButton } from "@/components/facebook-connect-button";
 import { AutomationBuilder } from "@/components/automation-builder";
+import { parseAttachments } from "@/lib/dm-attachments";
 
 export default async function NewAutomationPage({
   searchParams,
@@ -29,7 +30,9 @@ export default async function NewAutomationPage({
       sp.from
         ? supabase
             .from("automations")
-            .select("name, keyword, dm_message, public_reply")
+            .select(
+              "name, keyword, dm_message, public_reply, dm_attachments, dm_button_label",
+            )
             .eq("id", sp.from)
             .eq("user_id", user.id)
             .maybeSingle()
@@ -94,6 +97,8 @@ export default async function NewAutomationPage({
         keyword: sourceAutomation.keyword ?? undefined,
         dmMessage: sourceAutomation.dm_message ?? undefined,
         publicReply: sourceAutomation.public_reply ?? undefined,
+        dmAttachments: parseAttachments(sourceAutomation.dm_attachments),
+        dmButtonLabel: sourceAutomation.dm_button_label ?? undefined,
       }
     : undefined;
 

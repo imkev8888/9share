@@ -200,12 +200,16 @@ export async function getMedia(
 }
 
 /**
- * Step 5 — subscribe this account to the "comments" webhook field so Instagram
- * starts POSTing comment events to our callback URL.
+ * Step 5 — subscribe this account to the webhook fields we act on.
+ *
+ * `comments` triggers the auto-reply. `messages` and `messaging_postbacks` are
+ * what tell us the person answered that DM, which is the only moment Instagram
+ * allows a picture to follow. Existing accounts pick the new fields up the next
+ * time they reconnect, which calls this same helper.
  */
 export async function subscribeToWebhooks(token: string): Promise<void> {
   const params = new URLSearchParams({
-    subscribed_fields: "comments",
+    subscribed_fields: "comments,messages,messaging_postbacks",
     access_token: token,
   });
   const res = await fetch(
@@ -218,27 +222,64 @@ export async function subscribeToWebhooks(token: string): Promise<void> {
   }
 }
 
+export interface PrivateReplyButton {
+  /** What the person sees and taps. Meta truncates past 20 characters. */
+  label: string;
+  /** Echoed back to us verbatim on the messaging_postbacks webhook. */
+  payload: string;
+}
+
 /**
  * Step 6 — send a private reply DM to whoever made a comment.
  * `recipient.comment_id` targets the commenter; allowed once per comment.
+ *
+ * With a `button`, the message goes as a button template instead of plain text.
+ * That is the only way to get a picture to this person: Instagram silently
+ * drops media from a private reply, and only opens a 24-hour window once they
+ * interact. Tapping the button is that interaction.
+ *
+ * Without a button the request body is byte-for-byte what it has always been,
+ * so campaigns with no media are untouched.
  */
 export async function sendPrivateReply(
   igUserId: string,
   commentId: string,
   text: string,
   token: string,
+  button?: PrivateReplyButton | null,
 ): Promise<{
   ok: boolean;
   error?: string;
   raw?: unknown;
   headers?: Headers;
+  /** The commenter's Instagram-scoped id, needed to send them anything later. */
+  recipientId?: string;
 }> {
+  const message = button
+    ? {
+        attachment: {
+          type: "template",
+          payload: {
+            template_type: "button",
+            text,
+            buttons: [
+              {
+                type: "postback",
+                title: button.label,
+                payload: button.payload,
+              },
+            ],
+          },
+        },
+      }
+    : { text };
+
   const res = await fetch(`${GRAPH}/${GRAPH_VERSION}/${igUserId}/messages`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       recipient: { comment_id: commentId },
-      message: { text },
+      message,
       access_token: token,
     }),
   });
@@ -251,7 +292,44 @@ export async function sendPrivateReply(
       headers: res.headers,
     };
   }
-  return { ok: true, raw: data, headers: res.headers };
+  return {
+    ok: true,
+    raw: data,
+    headers: res.headers,
+    recipientId:
+      typeof data?.recipient_id === "string" ? data.recipient_id : undefined,
+  };
+}
+
+/**
+ * Send one picture or video into an open messaging window.
+ *
+ * Meta fetches the URL from its own servers, which is why the storage bucket is
+ * public — a signed URL would have expired by the time Instagram got to it.
+ */
+export async function sendAttachment(
+  igUserId: string,
+  recipientId: string,
+  type: "image" | "video",
+  url: string,
+  token: string,
+): Promise<{ ok: boolean; error?: string; raw?: unknown }> {
+  const res = await fetch(`${GRAPH}/${GRAPH_VERSION}/${igUserId}/messages`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      recipient: { id: recipientId },
+      message: {
+        attachment: { type, payload: { url, is_reusable: true } },
+      },
+      access_token: token,
+    }),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    return { ok: false, error: graphErrorMessage(data), raw: data };
+  }
+  return { ok: true, raw: data };
 }
 
 /** Reply publicly to a comment (optional — e.g. "Check your DMs! 💌"). */

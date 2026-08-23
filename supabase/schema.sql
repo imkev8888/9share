@@ -441,3 +441,120 @@ alter table public.retry_drip_state enable row level security;
 drop policy if exists "own drip state" on public.retry_drip_state;
 create policy "own drip state" on public.retry_drip_state
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+-- ============================================================================
+-- Per-campaign paging for the Tracking sheet
+-- (see migrations/20260824_tracking_sheet_paging.sql)
+--
+-- PostgREST cannot express "newest N per group", so the sheet used to read one
+-- flat page for the whole user and slice it, starving quiet campaigns. Both
+-- functions are SECURITY INVOKER, so "own logs" still decides what comes back.
+-- ============================================================================
+
+create or replace function public.recent_automation_logs(p_per integer default 20)
+returns table (
+  id                 uuid,
+  automation_id      uuid,
+  comment_id         text,
+  commenter_username text,
+  comment_text       text,
+  status             text,
+  error              text,
+  source             text,
+  created_at         timestamptz
+)
+language sql
+stable
+set search_path = public
+as $$
+  select
+    r.id, r.automation_id, r.comment_id, r.commenter_username,
+    r.comment_text, r.status, r.error, r.source, r.created_at
+  from (
+    select
+      al.id, al.automation_id, al.comment_id, al.commenter_username,
+      al.comment_text, al.status, al.error, al.source, al.created_at,
+      row_number() over (
+        partition by al.automation_id
+        order by al.created_at desc, al.id desc
+      ) as rn
+    from public.automation_logs al
+    where al.user_id = auth.uid()
+      and al.source is distinct from 'manual'
+  ) r
+  where r.rn <= greatest(p_per, 1);
+$$;
+
+create or replace function public.automation_log_counts()
+returns table (
+  automation_id uuid,
+  status        text,
+  total         bigint
+)
+language sql
+stable
+set search_path = public
+as $$
+  select al.automation_id, al.status, count(*)::bigint
+  from public.automation_logs al
+  where al.user_id = auth.uid()
+    and al.source is distinct from 'manual'
+  group by al.automation_id, al.status;
+$$;
+
+grant execute on function public.recent_automation_logs(integer) to authenticated;
+grant execute on function public.automation_log_counts() to authenticated;
+
+-- ============================================================================
+-- Pictures and video for the auto-reply
+-- (see migrations/20260824_dm_media_followup.sql)
+--
+-- Meta drops media from a private reply silently, but allows a button in it.
+-- The person taps, a 24-hour messaging window opens, and the media follows.
+-- ============================================================================
+
+alter table public.automations
+  add column if not exists dm_attachments jsonb not null default '[]'::jsonb;
+
+alter table public.automations
+  add column if not exists dm_button_label text;
+
+-- The Instagram-scoped id Meta hands back from the private reply, so we know
+-- who to message once they tap.
+alter table public.automation_logs
+  add column if not exists recipient_id text;
+
+alter table public.automation_logs
+  add column if not exists followup_sent_at timestamptz;
+
+alter table public.automation_logs
+  add column if not exists followup_error text;
+
+create index if not exists automation_logs_recipient_idx
+  on public.automation_logs (account_id, recipient_id, created_at desc)
+  where recipient_id is not null;
+
+-- Public, because Meta fetches the URL itself when delivering the attachment.
+insert into storage.buckets (id, name, public)
+values ('automation_media', 'automation_media', true)
+on conflict (id) do nothing;
+
+drop policy if exists automation_media_storage_select on storage.objects;
+create policy automation_media_storage_select on storage.objects
+  for select using (bucket_id = 'automation_media');
+
+drop policy if exists automation_media_storage_insert on storage.objects;
+create policy automation_media_storage_insert on storage.objects
+  for insert to authenticated
+  with check (
+    bucket_id = 'automation_media'
+    and (storage.foldername(name))[1] = auth.uid()::text
+  );
+
+drop policy if exists automation_media_storage_delete on storage.objects;
+create policy automation_media_storage_delete on storage.objects
+  for delete to authenticated
+  using (
+    bucket_id = 'automation_media'
+    and (storage.foldername(name))[1] = auth.uid()::text
+  );

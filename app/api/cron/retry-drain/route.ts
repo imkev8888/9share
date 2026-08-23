@@ -143,7 +143,7 @@ async function loadAutomation(
   const { data } = await admin
     .from("automations")
     .select(
-      "id, name, keyword, dm_message, public_reply, ig_media_id, sent_count, is_active",
+      "id, name, keyword, dm_message, public_reply, ig_media_id, sent_count, is_active, dm_attachments, dm_button_label",
     )
     .eq("id", automationId)
     .maybeSingle();

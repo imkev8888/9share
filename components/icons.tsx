@@ -222,6 +222,37 @@ export const CloseIcon = (p: SVGProps<SVGSVGElement>) => (
   </svg>
 );
 
+export const FilterIcon = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base} {...p}>
+    <line x1="4" y1="7" x2="20" y2="7" />
+    <line x1="7" y1="12" x2="17" y2="12" />
+    <line x1="10" y1="17" x2="14" y2="17" />
+  </svg>
+);
+
+export const ImageIcon = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base} {...p}>
+    <rect x="3" y="3" width="18" height="18" rx="2" />
+    <circle cx="8.5" cy="8.5" r="1.5" />
+    <polyline points="21 15 16 10 5 21" />
+  </svg>
+);
+
+export const VideoIcon = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base} {...p}>
+    <rect x="2" y="6" width="14" height="12" rx="2" />
+    <polygon points="16 11 22 7 22 17 16 13" />
+  </svg>
+);
+
+/** The tappable button we attach to an auto-DM. */
+export const CursorClickIcon = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base} {...p}>
+    <path d="M9 3v9.4l2.3-2 2.4 5.2 2.3-1.1-2.4-5.2 3-.5z" />
+    <path d="M15 18.5 16 21m4-6.5L22 16M18.5 20 20 22" />
+  </svg>
+);
+
 export const ThreadsIcon = (p: SVGProps<SVGSVGElement>) => (
   <svg {...base} {...p}>
     <path d="M12 2c-2 0-3.5 1.2-4.5 3.1C6.5 3.2 5 2 3 2 2 8 4 14 12 22c8-8 10-14 9-20-2 0-3.5 1.2-4.5 3.1C15.5 3.2 14 2 12 2z" />

@@ -2,6 +2,8 @@ import { NextResponse, type NextRequest } from "next/server";
 import { createHmac, timingSafeEqual } from "crypto";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { sendPrivateReply, replyToComment } from "@/lib/instagram";
+import { deliverMedia, privateReplyButton } from "@/lib/dm-media";
+import { parseMediaPostback } from "@/lib/dm-attachments";
 
 // Webhooks must run on Node (crypto) and never be cached.
 export const runtime = "nodejs";
@@ -55,10 +57,21 @@ interface CommentValue {
   media?: { id: string; media_product_type?: string };
   parent_id?: string;
 }
+/**
+ * Messaging events arrive under `messaging`, not `changes` — a different shape
+ * with a different field name, on the same webhook.
+ */
+interface MessagingEvent {
+  sender?: { id?: string };
+  recipient?: { id?: string };
+  message?: { mid?: string; text?: string; is_echo?: boolean };
+  postback?: { mid?: string; title?: string; payload?: string };
+}
 interface WebhookEntry {
   id: string; // the IG account id that owns the media
   time: number;
   changes?: { field: string; value: CommentValue }[];
+  messaging?: MessagingEvent[];
 }
 interface WebhookBody {
   object: string;
@@ -98,9 +111,44 @@ export async function POST(request: NextRequest) {
         console.error("[webhook] handleComment error", e);
       }
     }
+
+    for (const event of entry.messaging ?? []) {
+      // Echoes are our own outgoing DMs coming back to us.
+      if (event.message?.is_echo) continue;
+      const senderId = event.sender?.id;
+      if (!senderId || senderId === entry.id) continue;
+      try {
+        await handleInboundMessage(entry.id, senderId, event.postback?.payload);
+      } catch (e) {
+        console.error("[webhook] handleInboundMessage error", e);
+      }
+    }
   }
 
   return NextResponse.json({ received: true });
+}
+
+/* -------------------------------------------------------------------------- */
+/* Someone answered an auto-DM — the one moment media is allowed              */
+/* -------------------------------------------------------------------------- */
+async function handleInboundMessage(
+  igAccountId: string,
+  senderId: string,
+  postbackPayload?: string,
+) {
+  const admin = createAdminClient();
+
+  const { data: account } = await admin
+    .from("instagram_accounts")
+    .select("id, ig_user_id, access_token")
+    .eq("ig_user_id", igAccountId)
+    .maybeSingle();
+  if (!account) return;
+
+  // A button tap names its campaign outright. A typed reply does not, so the
+  // newest DM still owing media is used instead.
+  const automationId = parseMediaPostback(postbackPayload);
+  await deliverMedia(admin, account, senderId, automationId);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -131,7 +179,9 @@ async function handleComment(igAccountId: string, comment: CommentValue) {
   // Find an active automation for this exact post/reel.
   const { data: automation } = await admin
     .from("automations")
-    .select("id, keyword, dm_message, public_reply, is_active, sent_count")
+    .select(
+      "id, keyword, dm_message, public_reply, is_active, sent_count, dm_attachments, dm_button_label",
+    )
     .eq("account_id", account.id)
     .eq("ig_media_id", mediaId)
     .eq("is_active", true)
@@ -227,11 +277,14 @@ async function handleComment(igAccountId: string, comment: CommentValue) {
 
   const message = personalize(automation.dm_message, comment);
 
+  // With media attached the DM carries a button, which is what lets the person
+  // open the window the picture needs. Without media, an ordinary text DM.
   const result = await sendPrivateReply(
     account.ig_user_id,
     comment.id,
     message,
     account.access_token,
+    privateReplyButton(automation, message),
   );
 
   let publicReplyText: string | null = null;
@@ -268,6 +321,9 @@ async function handleComment(igAccountId: string, comment: CommentValue) {
     commenter_username: comment.from?.username ?? null,
     comment_text: comment.text ?? null,
     dm_text: result.ok ? message : null,
+    // Without this we could never message them again, so the media would have
+    // nowhere to go the moment they tap.
+    recipient_id: result.recipientId ?? null,
     public_reply_text: publicReplyText,
     public_reply_id: publicReplyId,
     source: "automation",

@@ -1,13 +1,20 @@
 import { requireAutomationAccess } from "@/lib/product-gate";
-import { TrackingBoard, type PostGroup } from "@/components/tracking-board";
+import {
+  TrackingBoard,
+  PAGE_SIZE,
+  type Interaction,
+  type PostGroup,
+} from "@/components/tracking-board";
 import { SheetIcon } from "@/components/icons";
 import { isPermanentError, RETRY_WINDOW_MS } from "@/lib/retry-failed";
+
+/** Rows whose campaign was deleted still deserve a home. */
+const DELETED = "__deleted__";
 
 export default async function TrackingPage() {
   const { supabase, user } = await requireAutomationAccess();
 
-  // Pull automations (the "posts") and every interaction in parallel.
-  const [{ data: automations }, { data: logs }, statusTotals, recovery] =
+  const [{ data: automations }, recent, manual, counts, recovery] =
     await Promise.all([
       supabase
         .from("automations")
@@ -16,40 +23,60 @@ export default async function TrackingPage() {
         )
         .eq("user_id", user.id)
         .order("created_at", { ascending: false }),
+      // Newest page per campaign, rather than one flat page for the whole
+      // account — otherwise a post with hundreds of comments starves the rest.
+      // One extra row per campaign is what tells us there is more to load.
+      supabase.rpc("recent_automation_logs", { p_per: PAGE_SIZE + 1 }),
+      // Announcements are few and drive the Comment box, so they are never
+      // paged; they must not fall off the end of a campaign's first page.
       supabase
         .from("automation_logs")
         .select(
           "id, automation_id, comment_id, commenter_username, comment_text, status, error, source, created_at",
         )
         .eq("user_id", user.id)
+        .eq("source", "manual")
         .order("created_at", { ascending: false })
         .limit(200),
-      // The rows above are capped for rendering, so the headline numbers have
-      // to be counted separately or they understate the real totals.
-      countByStatusForUser(supabase, user.id),
+      supabase.rpc("automation_log_counts"),
       loadRecovery(supabase, user.id),
     ]);
 
-  // Group interactions under the post (automation) they belong to.
-  const byAutomation = new Map<string, PostGroup["interactions"]>();
-  for (const log of logs ?? []) {
-    const key = log.automation_id ?? "__deleted__";
-    if (!byAutomation.has(key)) byAutomation.set(key, []);
-    byAutomation.get(key)!.push({
-      id: log.id,
-      comment_id: log.comment_id,
-      commenter_username: log.commenter_username,
-      comment_text: log.comment_text,
-      status: log.status,
-      error: log.error,
-      source: log.source,
-      created_at: log.created_at,
-    });
-  }
+  const inboundByAutomation = groupRows(
+    (recent.data ?? []) as (Interaction & { automation_id: string | null })[],
+  );
+  const manualByAutomation = groupRows(
+    (manual.data ?? []) as (Interaction & { automation_id: string | null })[],
+  );
+  const countsByAutomation = groupCounts(
+    (counts.data ?? []) as {
+      automation_id: string | null;
+      status: string;
+      total: number;
+    }[],
+  );
 
-  const groups: PostGroup[] = (automations ?? []).map((a) => {
-    const interactions = byAutomation.get(a.id) ?? [];
+  const build = (
+    key: string,
+    base: Omit<PostGroup, "interactions" | "manualComments" | "counts" | "hasMore">,
+  ): PostGroup => {
+    const page = inboundByAutomation.get(key) ?? [];
     return {
+      ...base,
+      interactions: page.slice(0, PAGE_SIZE),
+      manualComments: manualByAutomation.get(key) ?? [],
+      counts: countsByAutomation.get(key) ?? {
+        total: 0,
+        sent: 0,
+        skipped: 0,
+        failed: 0,
+      },
+      hasMore: page.length > PAGE_SIZE,
+    };
+  };
+
+  const groups: PostGroup[] = (automations ?? []).map((a) =>
+    build(a.id, {
       automationId: a.id,
       name: a.name,
       thumbnail: a.media_thumbnail,
@@ -62,35 +89,41 @@ export default async function TrackingPage() {
       mediaId: a.ig_media_id,
       accountId: a.account_id,
       fbPageId: a.fb_page_id,
-      interactions,
-      counts: countByStatus(interactions),
       recovery: recovery.get(a.id) ?? null,
-    };
-  });
+    }),
+  );
 
-  // Logs whose automation was deleted still deserve a home.
-  const orphan = byAutomation.get("__deleted__");
-  if (orphan?.length) {
-    groups.push({
-      automationId: null,
-      name: "Deleted automations",
-      thumbnail: null,
-      permalink: null,
-      keyword: null,
-      dmMessage: null,
-      publicReply: null,
-      isActive: false,
-      platform: null,
-      mediaId: null,
-      accountId: null,
-      fbPageId: null,
-      interactions: orphan,
-      counts: countByStatus(orphan),
-      recovery: null,
-    });
+  if (
+    (inboundByAutomation.get(DELETED)?.length ?? 0) > 0 ||
+    (manualByAutomation.get(DELETED)?.length ?? 0) > 0
+  ) {
+    groups.push(
+      build(DELETED, {
+        automationId: null,
+        name: "Deleted automations",
+        thumbnail: null,
+        permalink: null,
+        keyword: null,
+        dmMessage: null,
+        publicReply: null,
+        isActive: false,
+        platform: null,
+        mediaId: null,
+        accountId: null,
+        fbPageId: null,
+        recovery: null,
+      }),
+    );
   }
 
-  const totals = statusTotals;
+  // Headline numbers come from the same exact counts as the per-campaign chips,
+  // so the two can never disagree.
+  const totals = { sent: 0, skipped: 0, failed: 0 };
+  for (const c of countsByAutomation.values()) {
+    totals.sent += c.sent;
+    totals.skipped += c.skipped;
+    totals.failed += c.failed;
+  }
 
   return (
     <div className="space-y-6">
@@ -121,25 +154,41 @@ export default async function TrackingPage() {
   );
 }
 
-/** Exact per-status totals, independent of how many rows we render. */
-async function countByStatusForUser(
-  supabase: Awaited<ReturnType<typeof requireAutomationAccess>>["supabase"],
-  userId: string,
+function groupRows(rows: (Interaction & { automation_id: string | null })[]) {
+  const byAutomation = new Map<string, Interaction[]>();
+  for (const row of rows) {
+    const key = row.automation_id ?? DELETED;
+    if (!byAutomation.has(key)) byAutomation.set(key, []);
+    byAutomation.get(key)!.push({
+      id: row.id,
+      comment_id: row.comment_id,
+      commenter_username: row.commenter_username,
+      comment_text: row.comment_text,
+      status: row.status,
+      error: row.error,
+      source: row.source,
+      created_at: row.created_at,
+    });
+  }
+  return byAutomation;
+}
+
+function groupCounts(
+  rows: { automation_id: string | null; status: string; total: number }[],
 ) {
-  const count = async (status: string) => {
-    const { count: n } = await supabase
-      .from("automation_logs")
-      .select("id", { count: "exact", head: true })
-      .eq("user_id", userId)
-      .eq("status", status);
-    return n ?? 0;
-  };
-  const [sent, skipped, failed] = await Promise.all([
-    count("sent"),
-    count("skipped"),
-    count("failed"),
-  ]);
-  return { sent, skipped, failed };
+  const byAutomation = new Map<string, PostGroup["counts"]>();
+  for (const row of rows) {
+    const key = row.automation_id ?? DELETED;
+    const entry =
+      byAutomation.get(key) ?? { total: 0, sent: 0, skipped: 0, failed: 0 };
+    const n = Number(row.total) || 0;
+    entry.total += n;
+    if (row.status === "sent") entry.sent += n;
+    else if (row.status === "skipped") entry.skipped += n;
+    else if (row.status === "failed") entry.failed += n;
+    byAutomation.set(key, entry);
+  }
+  return byAutomation;
 }
 
 /**
@@ -185,17 +234,4 @@ async function loadRecovery(
     byPost.set(row.automation_id, entry);
   }
   return byPost;
-}
-
-function countByStatus(rows: { status: string }[]) {
-  return rows.reduce(
-    (acc, r) => {
-      acc.total += 1;
-      if (r.status === "sent") acc.sent += 1;
-      else if (r.status === "failed") acc.failed += 1;
-      else if (r.status === "skipped") acc.skipped += 1;
-      return acc;
-    },
-    { total: 0, sent: 0, skipped: 0, failed: 0 },
-  );
 }

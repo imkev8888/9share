@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { StatusPill } from "@/components/status-pill";
 import { PlatformBadge } from "@/components/platform-badge";
@@ -14,10 +14,14 @@ import {
   TrashIcon,
   ExternalLinkIcon,
   WarningIcon,
+  FilterIcon,
 } from "@/components/icons";
 import { shortSkipReason } from "@/lib/skip-reason";
 import { MediaThumb } from "@/components/media-thumb";
 import { FailedRecoveryDialog } from "@/components/failed-recovery-dialog";
+
+/** Rows per campaign, server-side and on every Load more. */
+export const PAGE_SIZE = 20;
 
 export interface Interaction {
   id: string;
@@ -43,8 +47,13 @@ export interface PostGroup {
   mediaId?: string | null;
   accountId?: string | null;
   fbPageId?: string | null;
+  /** Newest page of inbound comments. More arrive through Load more. */
   interactions: Interaction[];
+  /** Announcements posted from this sheet. Never paged — they drive the Comment box. */
+  manualComments: Interaction[];
+  /** Exact, counted in the database rather than from the page above. */
   counts: { total: number; sent: number; skipped: number; failed: number };
+  hasMore: boolean;
   /**
    * Counted across every failed row, not just the rendered ones, so a post with
    * hundreds of failures still shows a true number. Null when nothing is
@@ -66,6 +75,13 @@ const FILTERS: { id: StatusFilter; label: string }[] = [
   { id: "failed", label: "Failed" },
 ];
 
+const TONES: Record<StatusFilter, "cyan" | "amber" | "red" | "brand"> = {
+  all: "brand",
+  sent: "cyan",
+  skipped: "amber",
+  failed: "red",
+};
+
 export function TrackingBoard({
   groups,
   totals,
@@ -76,28 +92,26 @@ export function TrackingBoard({
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<StatusFilter>("all");
 
-  const filteredGroups = useMemo(() => {
+  const visibleGroups = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return groups
-      .map((g) => {
-        const interactions = g.interactions.filter((i) => {
-          if (filter !== "all" && i.status !== filter) return false;
-          if (!q) return true;
-          return (
-            (i.commenter_username ?? "").toLowerCase().includes(q) ||
-            (i.comment_text ?? "").toLowerCase().includes(q) ||
-            g.name.toLowerCase().includes(q)
-          );
-        });
-        return { ...g, interactions };
-      })
-      .filter((g) => {
-        if (g.interactions.length > 0) return true;
-        // Keep quiet campaigns visible so users can still comment on that post
-        if (filter === "all" && !q) return true;
-        if (q && g.name.toLowerCase().includes(q)) return true;
-        return false;
-      });
+    const keep = groups.filter((g) => {
+      // Exact counts, so a status filter can hide campaigns that genuinely have
+      // no such rows rather than campaigns whose rows merely aren't loaded.
+      if (filter !== "all" && g.counts[filter] === 0) return false;
+      if (!q) return true;
+      if (g.name.toLowerCase().includes(q)) return true;
+      return g.interactions.some(
+        (i) =>
+          (i.commenter_username ?? "").toLowerCase().includes(q) ||
+          (i.comment_text ?? "").toLowerCase().includes(q),
+      );
+    });
+
+    // Campaigns with comments still waiting on a DM go first, so the warning
+    // cannot be scrolled past. Both halves keep the server's newest-first order.
+    const warned = keep.filter((g) => (g.recovery?.recoverable ?? 0) > 0);
+    if (warned.length === 0) return keep;
+    return [...warned, ...keep.filter((g) => (g.recovery?.recoverable ?? 0) === 0)];
   }, [groups, query, filter]);
 
   return (
@@ -140,14 +154,19 @@ export function TrackingBoard({
       </div>
 
       {/* Per-post groups */}
-      {filteredGroups.length === 0 ? (
+      {visibleGroups.length === 0 ? (
         <div className="glass rounded-3xl p-10 text-center text-sm text-ink-soft">
           No interactions match your filters.
         </div>
       ) : (
         <div className="space-y-3">
-          {filteredGroups.map((g) => (
-            <PostCard key={g.automationId ?? "deleted"} group={g} />
+          {visibleGroups.map((g) => (
+            <PostCard
+              key={g.automationId ?? "deleted"}
+              group={g}
+              query={query}
+              globalFilter={filter}
+            />
           ))}
         </div>
       )}
@@ -155,16 +174,141 @@ export function TrackingBoard({
   );
 }
 
-function PostCard({ group }: { group: PostGroup }) {
+function PostCard({
+  group,
+  query,
+  globalFilter,
+}: {
+  group: PostGroup;
+  query: string;
+  globalFilter: StatusFilter;
+}) {
   const router = useRouter();
-  const [open, setOpen] = useState(true);
+  const campaignKey = group.automationId ?? "deleted";
+
+  // Collapsed by default. A search is the one case where that would hide the
+  // very rows the reader is looking for, so searching opens every card.
+  const searching = query.trim().length > 0;
+  const [open, setOpen] = useState(searching);
+  const [openSeed, setOpenSeed] = useState(searching);
+  if (openSeed !== searching) {
+    setOpenSeed(searching);
+    setOpen(searching);
+  }
+
+  const [filter, setFilter] = useState<StatusFilter>(globalFilter);
+  const [filterSeed, setFilterSeed] = useState(globalFilter);
+  if (filterSeed !== globalFilter) {
+    setFilterSeed(globalFilter);
+    setFilter(globalFilter);
+  }
+
+  const [rows, setRows] = useState(group.interactions);
+  const [hasMore, setHasMore] = useState(group.hasMore);
+  const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  // A server refresh (after the recovery dialog closes, say) has to win over
+  // whatever is in state, or the rows would contradict the badge above them.
+  const [pageSeed, setPageSeed] = useState(group.interactions);
+  if (pageSeed !== group.interactions) {
+    setPageSeed(group.interactions);
+    if (filter === "all") {
+      setRows(group.interactions);
+      setHasMore(group.hasMore);
+    }
+  }
+
   const [ownComments, setOwnComments] = useState(() =>
-    group.interactions.filter((i) => i.source === "manual" && i.comment_id),
+    group.manualComments.filter((i) => i.comment_id),
   );
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [recovering, setRecovering] = useState(false);
 
-  const inbound = group.interactions.filter((i) => i.source !== "manual");
+  const queryRef = useRef(query);
+  queryRef.current = query;
+
+  async function fetchPage(before: string | null) {
+    const params = new URLSearchParams({ limit: String(PAGE_SIZE) });
+    if (filter !== "all") params.set("status", filter);
+    const q = queryRef.current.trim();
+    if (q) params.set("q", q);
+    if (before) params.set("before", before);
+
+    const res = await fetch(`/api/automations/${campaignKey}/logs?${params}`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Couldn't load these comments");
+    return data as { interactions: Interaction[]; hasMore: boolean };
+  }
+
+  // Twenty rows cannot be filtered honestly in the browser: a campaign with
+  // fifty failures would report none. So a status change goes back to the
+  // server for a fresh first page.
+  const firstRun = useRef(true);
+  useEffect(() => {
+    if (firstRun.current) {
+      firstRun.current = false;
+      // The server already sent the unfiltered first page.
+      if (filter === "all") return;
+    }
+    let cancelled = false;
+    setLoading(true);
+    setLoadError(null);
+    fetchPage(null)
+      .then((data) => {
+        if (cancelled) return;
+        setRows(data.interactions);
+        setHasMore(data.hasMore);
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        setLoadError(err instanceof Error ? err.message : "Couldn't load");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // fetchPage is rebuilt every render but always reads the current filter.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filter, campaignKey]);
+
+  async function loadMore() {
+    const last = rows[rows.length - 1];
+    if (!last || loading) return;
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const data = await fetchPage(last.created_at);
+      setRows((prev) => {
+        const seen = new Set(prev.map((r) => r.id));
+        return [...prev, ...data.interactions.filter((r) => !seen.has(r.id))];
+      });
+      setHasMore(data.hasMore);
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : "Couldn't load more");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // Live typing narrows what is already loaded; the server calls above respect
+  // the same query, so the two never disagree.
+  const visible = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return rows.filter((i) => {
+      if (filter !== "all" && i.status !== filter) return false;
+      if (!q) return true;
+      return (
+        (i.commenter_username ?? "").toLowerCase().includes(q) ||
+        (i.comment_text ?? "").toLowerCase().includes(q)
+      );
+    });
+  }, [rows, filter, query]);
+
+  const remaining =
+    (filter === "all" ? group.counts.total : group.counts[filter]) - rows.length;
 
   const openLabel =
     group.platform === "facebook" ? "Open on Facebook" : "Open on Instagram";
@@ -260,11 +404,19 @@ function PostCard({ group }: { group: PostGroup }) {
 
       {open && (
         <div className="border-t border-white/60">
-          {/* Mobile count chips */}
-          <div className="flex gap-2 px-4 pt-3 sm:hidden">
-            <CountChip value={group.counts.sent} tone="cyan" labelled />
-            <CountChip value={group.counts.skipped} tone="amber" labelled />
-            <CountChip value={group.counts.failed} tone="red" labelled />
+          {/* Filter, plus the count chips the header hides on small screens */}
+          <div className="flex flex-wrap items-center gap-2 px-4 pt-3 sm:px-5">
+            <CampaignFilter
+              value={filter}
+              counts={group.counts}
+              busy={loading}
+              onChange={setFilter}
+            />
+            <div className="flex gap-2 sm:hidden">
+              <CountChip value={group.counts.sent} tone="cyan" labelled />
+              <CountChip value={group.counts.skipped} tone="amber" labelled />
+              <CountChip value={group.counts.failed} tone="red" labelled />
+            </div>
           </div>
 
           {/* Configured templates for this post */}
@@ -296,23 +448,27 @@ function PostCard({ group }: { group: PostGroup }) {
             />
           )}
 
-          {errorMsg && (
+          {(errorMsg || loadError) && (
             <div
               className="mx-4 mt-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-700 sm:mx-5"
               role="status"
             >
-              {errorMsg}
+              {errorMsg ?? loadError}
             </div>
           )}
 
           {/* Interaction rows (inbound / automation) */}
           <div className="mt-3 divide-y divide-white/60">
-            {inbound.length === 0 ? (
+            {visible.length === 0 ? (
               <p className="px-4 py-4 text-xs text-ink-soft sm:px-5">
-                No inbound comments yet for this post.
+                {loading
+                  ? "Loading…"
+                  : filter === "all"
+                    ? "No inbound comments yet for this post."
+                    : `No ${filter} comments for this post.`}
               </p>
             ) : (
-              inbound.map((i) => (
+              visible.map((i) => (
                 <InteractionRow
                   key={i.id}
                   interaction={i}
@@ -321,6 +477,24 @@ function PostCard({ group }: { group: PostGroup }) {
               ))
             )}
           </div>
+
+          {hasMore && (
+            <div className="px-4 py-3 sm:px-5">
+              <button
+                type="button"
+                onClick={() => void loadMore()}
+                disabled={loading}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-brand-200 bg-white px-3 py-1.5 text-xs font-bold text-brand-700 transition-colors hover:bg-brand-50 disabled:opacity-60 cursor-pointer"
+              >
+                <ChevronDownIcon className="h-3.5 w-3.5" />
+                {loading
+                  ? "Loading…"
+                  : remaining > 0
+                    ? `Load ${Math.min(remaining, PAGE_SIZE)} more`
+                    : "Load more"}
+              </button>
+            </div>
+          )}
         </div>
       )}
 
@@ -338,6 +512,94 @@ function PostCard({ group }: { group: PostGroup }) {
             router.refresh();
           }}
         />
+      )}
+    </div>
+  );
+}
+
+/** Narrow one campaign to sent, skipped or failed. */
+function CampaignFilter({
+  value,
+  counts,
+  busy,
+  onChange,
+}: {
+  value: StatusFilter;
+  counts: PostGroup["counts"];
+  busy: boolean;
+  onChange: (next: StatusFilter) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function onPointerDown(e: MouseEvent | TouchEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("touchstart", onPointerDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("touchstart", onPointerDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  const countFor = (id: StatusFilter) =>
+    id === "all" ? counts.total : counts[id];
+  const current = FILTERS.find((f) => f.id === value) ?? FILTERS[0];
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-label={`Filter this campaign — showing ${current.label.toLowerCase()}`}
+        className="inline-flex items-center gap-1.5 rounded-xl border border-brand-200 bg-white px-2.5 py-1.5 text-xs font-bold text-brand-700 transition-colors hover:bg-brand-50 cursor-pointer"
+      >
+        <FilterIcon className="h-3.5 w-3.5" />
+        <CountChip value={countFor(value)} tone={TONES[value]} />
+        <ChevronDownIcon
+          className={`h-3.5 w-3.5 transition-transform duration-200 ${
+            open ? "rotate-180" : ""
+          }`}
+        />
+      </button>
+
+      {open && (
+        <div
+          role="listbox"
+          className="absolute left-0 top-full z-20 mt-1 w-44 overflow-hidden rounded-2xl border border-white/70 bg-white p-1 shadow-lg"
+        >
+          {FILTERS.map((f) => (
+            <button
+              key={f.id}
+              type="button"
+              role="option"
+              aria-selected={f.id === value}
+              disabled={busy}
+              onClick={() => {
+                setOpen(false);
+                if (f.id !== value) onChange(f.id);
+              }}
+              className={`flex w-full items-center justify-between gap-2 rounded-xl px-2.5 py-1.5 text-xs font-semibold transition-colors disabled:opacity-60 cursor-pointer ${
+                f.id === value
+                  ? "bg-brand-50 text-brand-700"
+                  : "text-ink-soft hover:bg-brand-50/60 hover:text-ink"
+              }`}
+            >
+              <span>{f.label}</span>
+              <CountChip value={countFor(f.id)} tone={TONES[f.id]} />
+            </button>
+          ))}
+        </div>
       )}
     </div>
   );
@@ -704,15 +966,16 @@ function CountChip({
   labelled = false,
 }: {
   value: number;
-  tone: "cyan" | "amber" | "red";
+  tone: "cyan" | "amber" | "red" | "brand";
   labelled?: boolean;
 }) {
   const tones = {
     cyan: "bg-cyan-100 text-cyan-700",
     amber: "bg-amber-100 text-amber-700",
     red: "bg-red-100 text-red-700",
+    brand: "bg-brand-100 text-brand-700",
   };
-  const labels = { cyan: "sent", amber: "skipped", red: "failed" };
+  const labels = { cyan: "sent", amber: "skipped", red: "failed", brand: "all" };
   return (
     <span
       className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold ${tones[tone]}`}

@@ -14,6 +14,12 @@ import {
   SparkIcon,
 } from "@/components/icons";
 import { MediaThumb } from "@/components/media-thumb";
+import { DmAttachmentsField } from "@/components/dm-attachments-field";
+import {
+  rejectButtonLabel,
+  rejectDmForButton,
+  type DmAttachment,
+} from "@/lib/dm-attachments";
 
 const TEMPLATES = [
   {
@@ -93,6 +99,8 @@ export interface BuilderInitialValues {
   keyword?: string;
   dmMessage?: string;
   publicReply?: string;
+  dmAttachments?: DmAttachment[];
+  dmButtonLabel?: string;
 }
 
 export function AutomationBuilder({
@@ -140,6 +148,12 @@ export function AutomationBuilder({
   const [dmMessage, setDmMessage] = useState(initialValues?.dmMessage ?? "");
   const [publicReply, setPublicReply] = useState(
     initialValues?.publicReply ?? "",
+  );
+  const [dmAttachments, setDmAttachments] = useState<DmAttachment[]>(
+    initialValues?.dmAttachments ?? [],
+  );
+  const [dmButtonLabel, setDmButtonLabel] = useState(
+    initialValues?.dmButtonLabel ?? "",
   );
   const [error, setError] = useState<string | null>(null);
 
@@ -232,6 +246,14 @@ export function AutomationBuilder({
     if (selected.length === 0) return setError("Pick at least one post or reel.");
     if (!dmMessage.trim()) return setError("Write the DM message.");
 
+    const hasMedia = dmAttachments.length > 0;
+    const labelProblem = rejectButtonLabel(dmButtonLabel, hasMedia);
+    if (labelProblem) return setError(labelProblem);
+    if (hasMedia) {
+      const dmProblem = rejectDmForButton(dmMessage);
+      if (dmProblem) return setError(dmProblem);
+    }
+
     const igSelected = selected.filter((s) => s.platform === "instagram");
     const fbSelected = selected.filter((s) => s.platform === "facebook");
 
@@ -242,6 +264,8 @@ export function AutomationBuilder({
           keyword,
           dmMessage,
           publicReply,
+          dmAttachments,
+          dmButtonLabel,
           instagram:
             igSelected.length > 0 && instagram
               ? {
@@ -576,6 +600,17 @@ export function AutomationBuilder({
                   Facebook allows one automatic message per comment.
                 </p>
               )}
+              <div className="mt-3">
+                <DmAttachmentsField
+                  attachments={dmAttachments}
+                  buttonLabel={dmButtonLabel}
+                  dmMessage={dmMessage}
+                  disabled={pending}
+                  showFacebookNote={fbSelectedCount > 0}
+                  onAttachmentsChange={setDmAttachments}
+                  onButtonLabelChange={setDmButtonLabel}
+                />
+              </div>
             </Field>
 
             <Field

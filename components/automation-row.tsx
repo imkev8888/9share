@@ -14,6 +14,13 @@ import {
 } from "@/components/icons";
 import { PlatformBadge } from "@/components/platform-badge";
 import { MediaThumb } from "@/components/media-thumb";
+import { DmAttachmentsField } from "@/components/dm-attachments-field";
+import {
+  parseAttachments,
+  rejectButtonLabel,
+  rejectDmForButton,
+  type DmAttachment,
+} from "@/lib/dm-attachments";
 
 interface Automation {
   id: string;
@@ -28,6 +35,8 @@ interface Automation {
   platform?: string | null;
   ig_media_id?: string | null;
   account_id?: string | null;
+  dm_attachments?: unknown;
+  dm_button_label?: string | null;
 }
 
 export function AutomationRow({ automation }: { automation: Automation }) {
@@ -41,7 +50,20 @@ export function AutomationRow({ automation }: { automation: Automation }) {
   const [keyword, setKeyword] = useState(automation.keyword ?? "");
   const [dmMessage, setDmMessage] = useState(automation.dm_message);
   const [publicReply, setPublicReply] = useState(automation.public_reply ?? "");
-  const [draft, setDraft] = useState({ name, keyword, dmMessage, publicReply });
+  const [dmAttachments, setDmAttachments] = useState<DmAttachment[]>(() =>
+    parseAttachments(automation.dm_attachments),
+  );
+  const [dmButtonLabel, setDmButtonLabel] = useState(
+    automation.dm_button_label ?? "",
+  );
+  const [draft, setDraft] = useState({
+    name,
+    keyword,
+    dmMessage,
+    publicReply,
+    dmAttachments,
+    dmButtonLabel,
+  });
   const [error, setError] = useState<string | null>(null);
 
   function onToggle() {
@@ -57,7 +79,14 @@ export function AutomationRow({ automation }: { automation: Automation }) {
   }
 
   function openEditor() {
-    setDraft({ name, keyword, dmMessage, publicReply });
+    setDraft({
+      name,
+      keyword,
+      dmMessage,
+      publicReply,
+      dmAttachments,
+      dmButtonLabel,
+    });
     setError(null);
     setEditing(true);
   }
@@ -68,6 +97,19 @@ export function AutomationRow({ automation }: { automation: Automation }) {
       setError("Write the DM message.");
       return;
     }
+    const hasMedia = draft.dmAttachments.length > 0;
+    const labelProblem = rejectButtonLabel(draft.dmButtonLabel, hasMedia);
+    if (labelProblem) {
+      setError(labelProblem);
+      return;
+    }
+    if (hasMedia) {
+      const dmProblem = rejectDmForButton(draft.dmMessage);
+      if (dmProblem) {
+        setError(dmProblem);
+        return;
+      }
+    }
     startTransition(async () => {
       const res = await updateAutomation({
         id: automation.id,
@@ -75,6 +117,8 @@ export function AutomationRow({ automation }: { automation: Automation }) {
         keyword: draft.keyword,
         dmMessage: draft.dmMessage,
         publicReply: draft.publicReply,
+        dmAttachments: draft.dmAttachments,
+        dmButtonLabel: draft.dmButtonLabel,
       });
       if (res?.error) {
         setError(res.error);
@@ -84,6 +128,8 @@ export function AutomationRow({ automation }: { automation: Automation }) {
       setKeyword(draft.keyword.trim());
       setDmMessage(draft.dmMessage.trim());
       setPublicReply(draft.publicReply.trim());
+      setDmAttachments(draft.dmAttachments);
+      setDmButtonLabel(draft.dmButtonLabel.trim());
       setEditing(false);
     });
   }
@@ -238,6 +284,21 @@ export function AutomationRow({ automation }: { automation: Automation }) {
               className="input resize-none"
             />
           </div>
+
+          <DmAttachmentsField
+            attachments={draft.dmAttachments}
+            buttonLabel={draft.dmButtonLabel}
+            dmMessage={draft.dmMessage}
+            automationId={automation.id}
+            disabled={pending}
+            showFacebookNote={automation.platform === "facebook"}
+            onAttachmentsChange={(next) =>
+              setDraft({ ...draft, dmAttachments: next })
+            }
+            onButtonLabelChange={(next) =>
+              setDraft({ ...draft, dmButtonLabel: next })
+            }
+          />
 
           <div>
             <label className="mb-1 block text-xs font-semibold text-ink">
