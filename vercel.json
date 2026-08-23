@@ -3,6 +3,10 @@
     {
       "path": "/api/cron/instagram-token-refresh",
       "schedule": "0 3 * * *"
+    },
+    {
+      "path": "/api/cron/retry-drain",
+      "schedule": "*/2 * * * *"
     }
   ]
 }
