@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { getPages, subscribePageToWebhooks } from "@/lib/facebook";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { adoptOrphanedAutomations } from "@/lib/adopt-automations";
 
 /**
  * Confirms the Pages the user picked on the "Choose your Pages" screen.
@@ -63,7 +64,7 @@ export async function POST(request: NextRequest) {
         // Install the app on the Page so "feed" webhooks start arriving.
         await subscribePageToWebhooks(page.id, page.access_token);
 
-        const { error: upsertError } = await admin
+        const { data: pageRow, error: upsertError } = await admin
           .from("facebook_pages")
           .upsert(
             {
@@ -74,8 +75,22 @@ export async function POST(request: NextRequest) {
               page_access_token: page.access_token,
             },
             { onConflict: "page_id" },
-          );
+          )
+          .select("id")
+          .single();
         if (upsertError) throw new Error(upsertError.message);
+
+        // A previous disconnect left this Page's automations without a
+        // channel. Claim them back now that it exists again.
+        if (pageRow?.id) {
+          await adoptOrphanedAutomations({
+            admin,
+            column: "fb_page_id",
+            channelId: pageRow.id,
+            channelRef: page.id,
+            userId: user.id,
+          });
+        }
         connected += 1;
       } catch (e) {
         errors.push(

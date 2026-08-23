@@ -308,3 +308,83 @@ create table if not exists public.mcp_connections (
   meta jsonb not null default '{}'::jsonb,
   updated_at timestamptz not null default now()
 );
+
+-- ============================================================================
+-- Preserve automations and history when a channel is disconnected
+-- (see migrations/20260823_preserve_automations_on_disconnect.sql)
+-- ============================================================================
+
+alter table public.automations     alter column account_id drop not null;
+alter table public.automation_logs alter column account_id drop not null;
+
+-- Cascade -> set null on every channel foreign key.
+do $$
+declare
+  target  record;
+  fk_name text;
+begin
+  for target in
+    select *
+    from (values
+      ('automations',     'account_id', 'instagram_accounts'),
+      ('automations',     'fb_page_id', 'facebook_pages'),
+      ('automation_logs', 'account_id', 'instagram_accounts'),
+      ('automation_logs', 'fb_page_id', 'facebook_pages')
+    ) as t (child, col, parent)
+  loop
+    select c.conname
+      into fk_name
+      from pg_constraint c
+     where c.conrelid = format('public.%I', target.child)::regclass
+       and c.contype = 'f'
+       and c.conkey = array[(
+             select a.attnum
+               from pg_attribute a
+              where a.attrelid = format('public.%I', target.child)::regclass
+                and a.attname = target.col
+           )];
+
+    if fk_name is not null then
+      execute format(
+        'alter table public.%I drop constraint %I',
+        target.child, fk_name
+      );
+    end if;
+
+    execute format(
+      'alter table public.%I add constraint %I'
+      ' foreign key (%I) references public.%I (id) on delete set null',
+      target.child,
+      format('%s_%s_fkey', target.child, target.col),
+      target.col,
+      target.parent
+    );
+  end loop;
+end $$;
+
+-- A disconnected automation has no channel at all.
+alter table public.automations
+  drop constraint if exists automations_channel_check;
+alter table public.automations
+  add constraint automations_channel_check
+  check (((account_id is not null)::int + (fb_page_id is not null)::int) <= 1);
+
+-- Stable external channel id (ig_user_id / page_id) so a reconnect can adopt
+-- back the automations its disconnect orphaned.
+alter table public.automations
+  add column if not exists channel_ref text;
+
+update public.automations a
+   set channel_ref = i.ig_user_id
+  from public.instagram_accounts i
+ where a.account_id = i.id
+   and a.channel_ref is null;
+
+update public.automations a
+   set channel_ref = p.page_id
+  from public.facebook_pages p
+ where a.fb_page_id = p.id
+   and a.channel_ref is null;
+
+create index if not exists automations_channel_ref_idx
+  on public.automations (channel_ref);
