@@ -186,6 +186,34 @@ export const ExternalLinkIcon = (p: SVGProps<SVGSVGElement>) => (
   </svg>
 );
 
+export const WarningIcon = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base} {...p}>
+    <path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z" />
+    <line x1="12" y1="9" x2="12" y2="13" />
+    <line x1="12" y1="17" x2="12.01" y2="17" />
+  </svg>
+);
+
+export const ClockIcon = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base} {...p}>
+    <circle cx="12" cy="12" r="10" />
+    <polyline points="12 6 12 12 16 14" />
+  </svg>
+);
+
+export const StopIcon = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base} {...p}>
+    <rect x="6" y="6" width="12" height="12" rx="2" />
+  </svg>
+);
+
+export const CloseIcon = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base} {...p}>
+    <line x1="18" y1="6" x2="6" y2="18" />
+    <line x1="6" y1="6" x2="18" y2="18" />
+  </svg>
+);
+
 export const ThreadsIcon = (p: SVGProps<SVGSVGElement>) => (
   <svg {...base} {...p}>
     <path d="M12 2c-2 0-3.5 1.2-4.5 3.1C6.5 3.2 5 2 3 2 2 8 4 14 12 22c8-8 10-14 9-20-2 0-3.5 1.2-4.5 3.1C15.5 3.2 14 2 12 2z" />

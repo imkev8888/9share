@@ -1,6 +1,10 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { sendPrivateReply, replyToComment } from "@/lib/instagram";
-import { loadPostState } from "@/lib/post-comment-state";
+import {
+  sendPrivateReply,
+  replyToComment,
+  getCommentReplies,
+} from "@/lib/instagram";
+import { loadPostState, looksLikeTemplate } from "@/lib/post-comment-state";
 import {
   fatalSendReason,
   isPermanentSendError,
@@ -411,8 +415,142 @@ async function markSkipped(
   if (!ids.length) return;
   await db
     .from("automation_logs")
-    .update({ status: "skipped", error: reason })
+    .update({ status: "skipped", error: reason, retry_queued_at: null })
     .in("id", ids);
+}
+
+/** Mark rows as explicitly asked-for, so the worker may deliver them. */
+export async function queueRows(
+  db: SupabaseClient,
+  ids: string[],
+): Promise<number> {
+  if (!ids.length) return 0;
+  const { data } = await db
+    .from("automation_logs")
+    .update({ retry_queued_at: new Date().toISOString() })
+    .in("id", ids)
+    .eq("status", "failed")
+    .select("id");
+  return ((data ?? []) as unknown[]).length;
+}
+
+/** Take rows back out of the queue. Anything already sent is untouched. */
+export async function unqueueRows(
+  db: SupabaseClient,
+  accountId: string,
+  automationId?: string | null,
+): Promise<number> {
+  let query = db
+    .from("automation_logs")
+    .update({ retry_queued_at: null })
+    .eq("account_id", accountId)
+    .not("retry_queued_at", "is", null);
+  if (automationId) query = query.eq("automation_id", automationId);
+  const { data } = await query.select("id");
+  return ((data ?? []) as unknown[]).length;
+}
+
+/** How many rows are still waiting to be delivered. */
+export async function countQueued(
+  db: SupabaseClient,
+  accountId: string,
+  automationId?: string | null,
+): Promise<number> {
+  let query = db
+    .from("automation_logs")
+    .select("id", { count: "exact", head: true })
+    .eq("account_id", accountId)
+    .not("retry_queued_at", "is", null);
+  if (automationId) query = query.eq("automation_id", automationId);
+  const { count } = await query;
+  return count ?? 0;
+}
+
+/** The next queued row for an account, oldest comment first. */
+export async function nextQueued(
+  db: SupabaseClient,
+  accountId: string,
+): Promise<FailedRow | null> {
+  const { data } = await db
+    .from("automation_logs")
+    .select(
+      "id, automation_id, comment_id, commenter_id, commenter_username, comment_text, error, created_at",
+    )
+    .eq("account_id", accountId)
+    .eq("status", "failed")
+    .not("retry_queued_at", "is", null)
+    .not("comment_id", "is", null)
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  return (data as FailedRow | null) ?? null;
+}
+
+/**
+ * Last check before a message goes out, for rows queued minutes or hours ago.
+ *
+ * Deliberately cheap: one call to the comment's replies edge instead of a full
+ * post sweep. That edge omits authorship, so a reply matching the template is
+ * treated as ours and anything else is left alone — the full sweep during
+ * reconcile is what distinguishes a manual reply from a stranger's.
+ *
+ * Returns a skip reason, or null when it is safe to send.
+ */
+export async function guardBeforeSend(
+  db: SupabaseClient,
+  account: AccountRow,
+  automation: AutomationRow,
+  row: FailedRow,
+): Promise<string | null> {
+  if (!withinWindow(row.created_at)) {
+    return "past Instagram's 7-day reply window";
+  }
+
+  const [sentSameComment, sentSamePerson] = await Promise.all([
+    db
+      .from("automation_logs")
+      .select("id")
+      .eq("status", "sent")
+      .eq("comment_id", row.comment_id!)
+      .limit(1),
+    row.commenter_id
+      ? db
+          .from("automation_logs")
+          .select("id")
+          .eq("status", "sent")
+          .eq("automation_id", automation.id)
+          .eq("commenter_id", row.commenter_id)
+          .limit(1)
+      : Promise.resolve({ data: [] }),
+  ]);
+  if (((sentSameComment.data ?? []) as unknown[]).length) {
+    return "this comment already received a DM";
+  }
+  if (((sentSamePerson.data ?? []) as unknown[]).length) {
+    return "this person already received a DM for this post";
+  }
+
+  try {
+    const replies = await getCommentReplies(
+      row.comment_id!,
+      account.access_token,
+    );
+    if (
+      replies.some((reply) =>
+        looksLikeTemplate(reply.text ?? "", automation.public_reply),
+      )
+    ) {
+      return "already answered by the automation";
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (/does not exist|cannot be loaded|Unsupported get request/iu.test(message)) {
+      return "the comment was deleted";
+    }
+    // A transient read failure is not a reason to skip a real person.
+  }
+
+  return null;
 }
 
 export interface SendOutcome {
@@ -424,7 +562,13 @@ export interface SendOutcome {
   error?: string;
 }
 
-/** Send exactly one queued reply and fold the result back into its log row. */
+/**
+ * Send exactly one queued reply and fold the result back into its log row.
+ *
+ * The queue marker is cleared however the attempt turns out, so one queue
+ * entry means one attempt. A row that keeps failing can then never sit at the
+ * head of the queue blocking everything behind it.
+ */
 export async function sendOne(
   db: SupabaseClient,
   account: AccountRow,
@@ -449,6 +593,7 @@ export async function sendOne(
       .update({
         status: permanent ? "skipped" : "failed",
         error: result.error ?? "send failed",
+        retry_queued_at: null,
       })
       .eq("id", row.id);
     return {
@@ -481,6 +626,7 @@ export async function sendOne(
       dm_text: dm,
       public_reply_text: publicReplyText,
       public_reply_id: publicReplyId,
+      retry_queued_at: null,
     })
     .eq("id", row.id);
 

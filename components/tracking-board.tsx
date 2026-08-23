@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { StatusPill } from "@/components/status-pill";
 import { PlatformBadge } from "@/components/platform-badge";
 import {
@@ -12,10 +13,11 @@ import {
   PencilIcon,
   TrashIcon,
   ExternalLinkIcon,
+  WarningIcon,
 } from "@/components/icons";
 import { shortSkipReason } from "@/lib/skip-reason";
 import { MediaThumb } from "@/components/media-thumb";
-import { RetryFailedPanel } from "@/components/retry-failed-panel";
+import { FailedRecoveryDialog } from "@/components/failed-recovery-dialog";
 
 export interface Interaction {
   id: string;
@@ -43,6 +45,16 @@ export interface PostGroup {
   fbPageId?: string | null;
   interactions: Interaction[];
   counts: { total: number; sent: number; skipped: number; failed: number };
+  /**
+   * Counted across every failed row, not just the rendered ones, so a post with
+   * hundreds of failures still shows a true number. Null when nothing is
+   * recoverable.
+   */
+  recovery: {
+    recoverable: number;
+    queued: number;
+    expiresAt: string | null;
+  } | null;
 }
 
 type StatusFilter = "all" | "sent" | "skipped" | "failed";
@@ -97,8 +109,6 @@ export function TrackingBoard({
         <Summary label="Failed" value={totals.failed} tone="red" />
       </div>
 
-      <RetryFailedPanel />
-
       {/* Controls */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <label className="glass flex items-center gap-2 rounded-2xl px-3.5 py-2.5 sm:w-72">
@@ -146,11 +156,13 @@ export function TrackingBoard({
 }
 
 function PostCard({ group }: { group: PostGroup }) {
+  const router = useRouter();
   const [open, setOpen] = useState(true);
   const [ownComments, setOwnComments] = useState(() =>
     group.interactions.filter((i) => i.source === "manual" && i.comment_id),
   );
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [recovering, setRecovering] = useState(false);
 
   const inbound = group.interactions.filter((i) => i.source !== "manual");
 
@@ -196,6 +208,21 @@ function PostCard({ group }: { group: PostGroup }) {
             </p>
           </div>
         </button>
+
+        {group.automationId && (group.recovery?.recoverable ?? 0) > 0 && (
+          <button
+            type="button"
+            onClick={() => setRecovering(true)}
+            title={`${group.recovery!.recoverable} comment${
+              group.recovery!.recoverable === 1 ? "" : "s"
+            } never received their DM — review and send`}
+            aria-label={`${group.recovery!.recoverable} comments never received their DM — review and send`}
+            className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full bg-red-100 px-3 text-xs font-extrabold text-red-700 transition-colors hover:bg-red-200 cursor-pointer sm:h-auto sm:px-2.5 sm:py-1"
+          >
+            <WarningIcon className="h-3.5 w-3.5" />
+            {group.recovery!.recoverable}
+          </button>
+        )}
 
         <div className="hidden shrink-0 items-center gap-1.5 sm:flex">
           <CountChip value={group.counts.sent} tone="cyan" />
@@ -295,6 +322,22 @@ function PostCard({ group }: { group: PostGroup }) {
             )}
           </div>
         </div>
+      )}
+
+      {recovering && group.automationId && (
+        <FailedRecoveryDialog
+          automationId={group.automationId}
+          name={group.name}
+          thumbnail={group.thumbnail}
+          accountId={group.accountId}
+          mediaId={group.mediaId}
+          onClose={() => {
+            setRecovering(false);
+            // The badge is rendered on the server, so re-read it rather than
+            // leave a count that no longer matches what just happened.
+            router.refresh();
+          }}
+        />
       )}
     </div>
   );

@@ -1,18 +1,26 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 /**
- * Pacing and safety rails for draining a backlog of private replies.
+ * Pacing and safety rails for delivering queued private replies.
  *
  * Meta's guidance is that private replies should be "real-time consumers of
  * the comments webhook, not batch sweeps over old comments", so a backlog
  * drain is exactly the pattern that attracts spam enforcement. The documented
  * ceiling (750/hour) is not the binding constraint; looking unlike a human is.
- * These defaults sit inside what this account already does organically.
+ *
+ * An earlier version made the queue share one budget with live webhook traffic
+ * so real-time replies would take priority. On a busy account that starved the
+ * queue completely: live traffic alone exhausted the allowance every hour, so
+ * nothing queued could ever go out and the backlog would quietly expire.
+ * Queued messages now pace themselves instead, since a person explicitly asked
+ * for each one. The ceiling below is a runaway guard, not a priority scheme.
  */
 
-export const RETRY_HOURLY_LIMIT = Number(process.env.RETRY_HOURLY_LIMIT ?? 30);
-export const RETRY_DAILY_LIMIT = Number(process.env.RETRY_DAILY_LIMIT ?? 180);
-const GAP_MIN_MS = Number(process.env.RETRY_GAP_MIN_MS ?? 60_000);
+/** Stop everything if total sends in an hour reach this. */
+export const MAX_TOTAL_PER_HOUR = Number(
+  process.env.RETRY_MAX_TOTAL_PER_HOUR ?? 200,
+);
+const GAP_MIN_MS = Number(process.env.RETRY_GAP_MIN_MS ?? 90_000);
 const GAP_MAX_MS = Number(process.env.RETRY_GAP_MAX_MS ?? 150_000);
 
 const HOUR_MS = 60 * 60 * 1000;
@@ -70,30 +78,30 @@ export async function ensureDripState(
   return data as DripState;
 }
 
-/** Every account currently opted in to draining its backlog. */
-export async function listActiveDrips(
+/** Accounts with something queued and no tripped breaker. */
+export async function listAccountsWithQueue(
   db: SupabaseClient,
-): Promise<DripState[]> {
+): Promise<string[]> {
   const { data } = await db
-    .from("retry_drip_state")
-    .select(STATE_FIELDS)
-    .eq("enabled", true)
-    .is("halted_reason", null);
-  return (data ?? []) as DripState[];
+    .from("automation_logs")
+    .select("account_id")
+    .not("retry_queued_at", "is", null)
+    .not("account_id", "is", null)
+    .limit(5000);
+  return [
+    ...new Set(
+      ((data ?? []) as { account_id: string }[]).map((r) => r.account_id),
+    ),
+  ];
 }
 
 export interface SendUsage {
   lastHour: number;
   lastDay: number;
-  hourlyLimit: number;
-  dailyLimit: number;
+  ceilingPerHour: number;
 }
 
-/**
- * Counts every send on the account, not just retries. Live webhook traffic and
- * the backlog therefore share one budget, so real-time replies to fresh
- * comments always take priority and the drip yields to them automatically.
- */
+/** Total sends on the account, used only for the runaway guard and display. */
 export async function getSendUsage(
   db: SupabaseClient,
   accountId: string,
@@ -116,8 +124,7 @@ export async function getSendUsage(
   return {
     lastHour: hour ?? 0,
     lastDay: day ?? 0,
-    hourlyLimit: RETRY_HOURLY_LIMIT,
-    dailyLimit: RETRY_DAILY_LIMIT,
+    ceilingPerHour: MAX_TOTAL_PER_HOUR,
   };
 }
 
@@ -125,26 +132,16 @@ export type GateResult =
   | { allowed: true }
   | { allowed: false; reason: string; retryAfterMs?: number };
 
-/** Every condition that must hold before a single message may go out. */
+/** Every condition that must hold before one queued message may go out. */
 export function checkGate(state: DripState, usage: SendUsage): GateResult {
   if (state.halted_reason) {
     return { allowed: false, reason: `halted: ${state.halted_reason}` };
   }
-  if (!state.enabled) {
-    return { allowed: false, reason: "drip is paused" };
-  }
-  if (usage.lastHour >= usage.hourlyLimit) {
+  if (usage.lastHour >= usage.ceilingPerHour) {
     return {
       allowed: false,
-      reason: `hourly cap reached (${usage.lastHour}/${usage.hourlyLimit})`,
+      reason: `safety ceiling reached (${usage.lastHour}/${usage.ceilingPerHour} sends this hour)`,
       retryAfterMs: HOUR_MS,
-    };
-  }
-  if (usage.lastDay >= usage.dailyLimit) {
-    return {
-      allowed: false,
-      reason: `daily cap reached (${usage.lastDay}/${usage.dailyLimit})`,
-      retryAfterMs: DAY_MS,
     };
   }
   if (state.next_send_after) {

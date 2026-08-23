@@ -1,12 +1,13 @@
 import { requireAutomationAccess } from "@/lib/product-gate";
 import { TrackingBoard, type PostGroup } from "@/components/tracking-board";
 import { SheetIcon } from "@/components/icons";
+import { isPermanentError, RETRY_WINDOW_MS } from "@/lib/retry-failed";
 
 export default async function TrackingPage() {
   const { supabase, user } = await requireAutomationAccess();
 
   // Pull automations (the "posts") and every interaction in parallel.
-  const [{ data: automations }, { data: logs }, statusTotals] =
+  const [{ data: automations }, { data: logs }, statusTotals, recovery] =
     await Promise.all([
       supabase
         .from("automations")
@@ -26,6 +27,7 @@ export default async function TrackingPage() {
       // The rows above are capped for rendering, so the headline numbers have
       // to be counted separately or they understate the real totals.
       countByStatusForUser(supabase, user.id),
+      loadRecovery(supabase, user.id),
     ]);
 
   // Group interactions under the post (automation) they belong to.
@@ -62,6 +64,7 @@ export default async function TrackingPage() {
       fbPageId: a.fb_page_id,
       interactions,
       counts: countByStatus(interactions),
+      recovery: recovery.get(a.id) ?? null,
     };
   });
 
@@ -83,6 +86,7 @@ export default async function TrackingPage() {
       fbPageId: null,
       interactions: orphan,
       counts: countByStatus(orphan),
+      recovery: null,
     });
   }
 
@@ -136,6 +140,51 @@ async function countByStatusForUser(
     count("failed"),
   ]);
   return { sent, skipped, failed };
+}
+
+/**
+ * Per-post recovery numbers, counted from every failed row rather than the
+ * capped page above — the post with 200+ failures cannot otherwise show a real
+ * number. Uses the same 7-day window and permanent-error rules as the sender,
+ * so the warning badge never promises a message that cannot go out.
+ */
+async function loadRecovery(
+  supabase: Awaited<ReturnType<typeof requireAutomationAccess>>["supabase"],
+  userId: string,
+) {
+  const { data } = await supabase
+    .from("automation_logs")
+    .select("automation_id, created_at, error, retry_queued_at")
+    .eq("user_id", userId)
+    .eq("status", "failed")
+    .not("comment_id", "is", null)
+    .limit(5000);
+
+  const byPost = new Map<
+    string,
+    { recoverable: number; queued: number; expiresAt: string | null }
+  >();
+  for (const row of (data ?? []) as {
+    automation_id: string | null;
+    created_at: string;
+    error: string | null;
+    retry_queued_at: string | null;
+  }[]) {
+    if (!row.automation_id) continue;
+    const deadline = new Date(row.created_at).getTime() + RETRY_WINDOW_MS;
+    if (deadline <= Date.now()) continue;
+    if (isPermanentError(row.error)) continue;
+
+    const entry =
+      byPost.get(row.automation_id) ??
+      { recoverable: 0, queued: 0, expiresAt: null };
+    entry.recoverable += 1;
+    if (row.retry_queued_at) entry.queued += 1;
+    const iso = new Date(deadline).toISOString();
+    if (!entry.expiresAt || iso < entry.expiresAt) entry.expiresAt = iso;
+    byPost.set(row.automation_id, entry);
+  }
+  return byPost;
 }
 
 function countByStatus(rows: { status: string }[]) {

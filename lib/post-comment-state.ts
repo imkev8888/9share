@@ -63,6 +63,18 @@ function matchesTemplate(replyText: string, fingerprints: string[]): boolean {
 }
 
 /**
+ * Whether a single reply looks like it came from the given template. Used by
+ * the pre-send guard, where fetching one comment's replies is far cheaper than
+ * sweeping the whole post.
+ */
+export function looksLikeTemplate(
+  replyText: string,
+  template: string | null | undefined,
+): boolean {
+  return matchesTemplate(replyText, templateFingerprints(template));
+}
+
+/**
  * @param ourIgUserId the connected account's IG user id, so we can tell our
  *   own comments and replies apart from everybody else's.
  * @param publicReplyTemplate the automation's configured public reply, used to

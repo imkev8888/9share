@@ -390,12 +390,27 @@ create index if not exists automations_channel_ref_idx
   on public.automations (channel_ref);
 
 -- ============================================================================
--- Background drip state for retrying failed auto-replies.
+-- Queue marker for recovering failed auto-replies.
 --
--- The drip is driven by a cron that fires every two minutes and sends at most
--- one message per invocation, so the on/off switch, the tripped circuit
--- breaker and the randomized send gap have to survive between invocations.
--- Send counts are derived from automation_logs rather than stored here.
+-- A failed row is only delivered once it has been explicitly queued from the
+-- Tracking sheet. The row keeps status = 'failed' while queued, so existing
+-- counts and indexes stay truthful; only the intent to send lives here.
+-- ============================================================================
+
+alter table public.automation_logs
+  add column if not exists retry_queued_at timestamptz;
+
+create index if not exists automation_logs_retry_queue_idx
+  on public.automation_logs (account_id, retry_queued_at)
+  where retry_queued_at is not null;
+
+-- ============================================================================
+-- Delivery state for the queued retry worker.
+--
+-- The worker fires every two minutes and sends at most one message per
+-- invocation, so the randomized send gap and a tripped circuit breaker have to
+-- survive between invocations. Send counts are derived from automation_logs
+-- rather than stored here.
 -- ============================================================================
 
 create table if not exists public.retry_drip_state (
