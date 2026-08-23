@@ -7,6 +7,7 @@ import {
 } from "@/lib/instagram";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { adoptOrphanedAutomations } from "@/lib/adopt-automations";
 
 /**
  * OAuth redirect target. Instagram sends ?code & ?state here.
@@ -84,6 +85,16 @@ export async function GET(request: NextRequest) {
         .from("automation_logs")
         .update({ user_id: user.id })
         .eq("account_id", accountRow.id);
+
+      // A previous disconnect left this account's automations without a
+      // channel. Claim them back now that it exists again.
+      await adoptOrphanedAutomations({
+        admin,
+        column: "account_id",
+        channelId: accountRow.id,
+        channelRef: profile.user_id,
+        userId: user.id,
+      });
     }
 
     const res = NextResponse.redirect(

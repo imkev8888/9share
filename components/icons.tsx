@@ -53,6 +53,13 @@ export const MessageIcon = (p: SVGProps<SVGSVGElement>) => (
   </svg>
 );
 
+export const RefreshIcon = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base} {...p}>
+    <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+    <polyline points="21 3 21 9 15 9" />
+  </svg>
+);
+
 export const BoltIcon = (p: SVGProps<SVGSVGElement>) => (
   <svg {...base} {...p}>
     <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />

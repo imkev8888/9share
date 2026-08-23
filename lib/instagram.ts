@@ -227,7 +227,12 @@ export async function sendPrivateReply(
   commentId: string,
   text: string,
   token: string,
-): Promise<{ ok: boolean; error?: string; raw?: unknown }> {
+): Promise<{
+  ok: boolean;
+  error?: string;
+  raw?: unknown;
+  headers?: Headers;
+}> {
   const res = await fetch(`${GRAPH}/${GRAPH_VERSION}/${igUserId}/messages`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -243,9 +248,10 @@ export async function sendPrivateReply(
       ok: false,
       error: data?.error?.message || JSON.stringify(data),
       raw: data,
+      headers: res.headers,
     };
   }
-  return { ok: true, raw: data };
+  return { ok: true, raw: data, headers: res.headers };
 }
 
 /** Reply publicly to a comment (optional — e.g. "Check your DMs! 💌"). */
@@ -301,6 +307,67 @@ export async function getMediaComments(
     throw new Error(`getMediaComments failed: ${graphErrorMessage(data)}`);
   }
   return (data.data ?? []) as IgComment[];
+}
+
+/**
+ * A comment as returned by the media comments edge. Unlike the per-comment
+ * replies edge (which omits authorship entirely), this edge does return
+ * `from` and `parent_id`, so it can tell whose reply is whose.
+ */
+export interface IgCommentNode {
+  id: string;
+  text?: string;
+  timestamp?: string;
+  parent_id?: string;
+  from?: { id?: string; username?: string };
+}
+
+export type MediaCommentsResult =
+  | { ok: true; comments: IgCommentNode[] }
+  | { ok: false; gone: boolean; error: string };
+
+/**
+ * Every comment on a media object, replies included, following paging cursors.
+ * `gone` distinguishes a deleted/inaccessible post (subcode 33) from a
+ * transient failure, so callers can retire it instead of retrying forever.
+ */
+export async function getAllMediaComments(
+  mediaId: string,
+  token: string,
+  maxPages = 25,
+): Promise<MediaCommentsResult> {
+  const params = new URLSearchParams({
+    fields: "id,text,timestamp,parent_id,from",
+    limit: "100",
+    access_token: token,
+  });
+  let url = `${GRAPH}/${GRAPH_VERSION}/${mediaId}/comments?${params.toString()}`;
+  const comments: IgCommentNode[] = [];
+  const seen = new Set<string>();
+
+  for (let page = 0; page < maxPages && url; page += 1) {
+    const res = await fetch(url);
+    const data = await res.json();
+    if (!res.ok) {
+      const subcode = (
+        data as { error?: { error_subcode?: number } }
+      )?.error?.error_subcode;
+      return {
+        ok: false,
+        gone: subcode === 33,
+        error: graphErrorMessage(data),
+      };
+    }
+    for (const node of (data.data ?? []) as IgCommentNode[]) {
+      if (node?.id && !seen.has(node.id)) {
+        seen.add(node.id);
+        comments.push(node);
+      }
+    }
+    url = (data.paging?.next as string | undefined) ?? "";
+  }
+
+  return { ok: true, comments };
 }
 
 /** List replies under an IG Comment (used to find our public reply id). */

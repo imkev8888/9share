@@ -149,7 +149,7 @@ export async function createAutomations(input: CreateAutomationsInput) {
 
   const { data: account } = await supabase
     .from("instagram_accounts")
-    .select("id")
+    .select("id, ig_user_id")
     .eq("id", input.accountId)
     .eq("user_id", user.id)
     .maybeSingle();
@@ -174,6 +174,7 @@ export async function createAutomations(input: CreateAutomationsInput) {
       supabase,
       user.id,
       input.accountId,
+      account.ig_user_id,
       media,
       shared,
     );
@@ -197,12 +198,14 @@ async function saveAutomation(
   supabase: Awaited<ReturnType<typeof createClient>>,
   userId: string,
   accountId: string,
+  channelRef: string,
   media: AutomationMediaInput,
   shared: SharedCampaign,
 ) {
   const payload = {
     user_id: userId,
     account_id: accountId,
+    channel_ref: channelRef,
     ig_media_id: media.igMediaId,
     media_permalink: nullableText(media.mediaPermalink),
     media_thumbnail: nullableText(media.mediaThumbnail),
@@ -320,7 +323,7 @@ export async function createCampaign(input: CreateCampaignInput) {
     const accountId = input.instagram!.accountId;
     const { data: account } = await supabase
       .from("instagram_accounts")
-      .select("id")
+      .select("id, ig_user_id")
       .eq("id", accountId)
       .eq("user_id", user.id)
       .maybeSingle();
@@ -335,6 +338,7 @@ export async function createCampaign(input: CreateCampaignInput) {
           supabase,
           user.id,
           accountId,
+          account.ig_user_id,
           media,
           shared,
         );
@@ -348,14 +352,17 @@ export async function createCampaign(input: CreateCampaignInput) {
     // Verify every referenced Page belongs to this user.
     const { data: pages } = await supabase
       .from("facebook_pages")
-      .select("id")
+      .select("id, page_id")
       .eq("user_id", user.id);
-    const ownedPageIds = new Set((pages ?? []).map((p) => p.id));
+    const ownedPageIds = new Map(
+      (pages ?? []).map((p) => [p.id, p.page_id] as const),
+    );
 
     for (const post of fbPosts) {
       if (!post.postId) continue;
       attempted += 1;
-      if (!ownedPageIds.has(post.pageId)) {
+      const channelRef = ownedPageIds.get(post.pageId);
+      if (!channelRef) {
         firstError =
           firstError ?? "Facebook Page not found. Try reconnecting it.";
         continue;
@@ -363,6 +370,7 @@ export async function createCampaign(input: CreateCampaignInput) {
       const res = await saveFacebookAutomation(
         supabase,
         user.id,
+        channelRef,
         post,
         shared,
       );
@@ -383,6 +391,7 @@ export async function createCampaign(input: CreateCampaignInput) {
 async function saveFacebookAutomation(
   supabase: Awaited<ReturnType<typeof createClient>>,
   userId: string,
+  channelRef: string,
   post: FacebookPostInput,
   shared: SharedCampaign,
 ) {
@@ -392,6 +401,7 @@ async function saveFacebookAutomation(
     platform: "facebook",
     account_id: null,
     fb_page_id: post.pageId,
+    channel_ref: channelRef,
     ig_media_id: post.postId,
     media_permalink: nullableText(post.permalink),
     media_thumbnail: nullableText(post.thumbnail),

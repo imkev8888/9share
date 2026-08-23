@@ -6,23 +6,27 @@ export default async function TrackingPage() {
   const { supabase, user } = await requireAutomationAccess();
 
   // Pull automations (the "posts") and every interaction in parallel.
-  const [{ data: automations }, { data: logs }] = await Promise.all([
-    supabase
-      .from("automations")
-      .select(
-        "id, name, keyword, dm_message, public_reply, media_thumbnail, media_permalink, is_active, sent_count, created_at, platform, ig_media_id, account_id, fb_page_id",
-      )
-      .eq("user_id", user.id)
-      .order("created_at", { ascending: false }),
-    supabase
-      .from("automation_logs")
-      .select(
-        "id, automation_id, comment_id, commenter_username, comment_text, status, error, source, created_at",
-      )
-      .eq("user_id", user.id)
-      .order("created_at", { ascending: false })
-      .limit(200),
-  ]);
+  const [{ data: automations }, { data: logs }, statusTotals] =
+    await Promise.all([
+      supabase
+        .from("automations")
+        .select(
+          "id, name, keyword, dm_message, public_reply, media_thumbnail, media_permalink, is_active, sent_count, created_at, platform, ig_media_id, account_id, fb_page_id",
+        )
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false }),
+      supabase
+        .from("automation_logs")
+        .select(
+          "id, automation_id, comment_id, commenter_username, comment_text, status, error, source, created_at",
+        )
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false })
+        .limit(200),
+      // The rows above are capped for rendering, so the headline numbers have
+      // to be counted separately or they understate the real totals.
+      countByStatusForUser(supabase, user.id),
+    ]);
 
   // Group interactions under the post (automation) they belong to.
   const byAutomation = new Map<string, PostGroup["interactions"]>();
@@ -82,15 +86,7 @@ export default async function TrackingPage() {
     });
   }
 
-  const totals = groups.reduce(
-    (acc, g) => {
-      acc.sent += g.counts.sent;
-      acc.skipped += g.counts.skipped;
-      acc.failed += g.counts.failed;
-      return acc;
-    },
-    { sent: 0, skipped: 0, failed: 0 },
-  );
+  const totals = statusTotals;
 
   return (
     <div className="space-y-6">
@@ -119,6 +115,27 @@ export default async function TrackingPage() {
       )}
     </div>
   );
+}
+
+/** Exact per-status totals, independent of how many rows we render. */
+async function countByStatusForUser(
+  supabase: Awaited<ReturnType<typeof requireAutomationAccess>>["supabase"],
+  userId: string,
+) {
+  const count = async (status: string) => {
+    const { count: n } = await supabase
+      .from("automation_logs")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", userId)
+      .eq("status", status);
+    return n ?? 0;
+  };
+  const [sent, skipped, failed] = await Promise.all([
+    count("sent"),
+    count("skipped"),
+    count("failed"),
+  ]);
+  return { sent, skipped, failed };
 }
 
 function countByStatus(rows: { status: string }[]) {

@@ -15,6 +15,7 @@ import {
 } from "@/components/icons";
 import { shortSkipReason } from "@/lib/skip-reason";
 import { MediaThumb } from "@/components/media-thumb";
+import { RetryFailedPanel } from "@/components/retry-failed-panel";
 
 export interface Interaction {
   id: string;
@@ -95,6 +96,8 @@ export function TrackingBoard({
         <Summary label="Skipped" value={totals.skipped} tone="amber" />
         <Summary label="Failed" value={totals.failed} tone="red" />
       </div>
+
+      <RetryFailedPanel />
 
       {/* Controls */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">

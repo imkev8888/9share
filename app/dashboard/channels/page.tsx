@@ -4,6 +4,7 @@ import { FacebookConnectButton } from "@/components/facebook-connect-button";
 import { ThreadsConnectButton } from "@/components/threads-connect-button";
 import { LinkedInConnectButton } from "@/components/linkedin-connect-button";
 import { ChannelDisconnectButton } from "@/components/channel-disconnect-button";
+import { ChannelReconnectButton } from "@/components/channel-reconnect-button";
 import { RedNoteChannelCard } from "@/components/rednote-channel-card";
 import { WeChatChannelCard } from "@/components/wechat-channel-card";
 import {
@@ -124,6 +125,10 @@ export default async function ChannelsPage({
                   {igAccount.name ?? "Instagram account"}
                 </p>
               </div>
+              <ChannelReconnectButton
+                platform="instagram"
+                name={`@${igAccount.username}`}
+              />
               <ChannelDisconnectButton
                 platform="instagram"
                 id={igAccount.id}
@@ -182,6 +187,10 @@ export default async function ChannelsPage({
                       Facebook Page
                     </p>
                   </div>
+                  <ChannelReconnectButton
+                    platform="facebook"
+                    name={page.page_name ?? "this Page"}
+                  />
                   <ChannelDisconnectButton
                     platform="facebook"
                     id={page.id}
@@ -228,6 +237,10 @@ export default async function ChannelsPage({
                   {threadsAccount.name ?? "Threads account"}
                 </p>
               </div>
+              <ChannelReconnectButton
+                platform="threads"
+                name={`@${threadsAccount.username ?? "threads"}`}
+              />
               <ChannelDisconnectButton
                 platform="threads"
                 id={threadsAccount.id}
@@ -269,6 +282,10 @@ export default async function ChannelsPage({
                 </div>
                 <p className="truncate text-xs text-ink-soft">LinkedIn profile</p>
               </div>
+              <ChannelReconnectButton
+                platform="linkedin"
+                name={linkedinAccount.name ?? "LinkedIn"}
+              />
               <ChannelDisconnectButton
                 platform="linkedin"
                 id={linkedinAccount.id}
