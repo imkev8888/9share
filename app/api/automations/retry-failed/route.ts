@@ -11,6 +11,7 @@ import {
 } from "@/lib/send-budget";
 import {
   countQueued,
+  dismissRows,
   guardBeforeSend,
   loadCandidates,
   queueRows,
@@ -220,6 +221,16 @@ export async function POST(request: NextRequest) {
       cleared,
       queued: await countQueued(admin, account.id, body.automationId),
     });
+  }
+
+  // Clearing a warning by hand: these people were answered already, or no
+  // longer need a DM. Nothing is sent and nothing is deleted.
+  if (body.action === "dismiss") {
+    const cleared = await dismissRows(admin, account.id, {
+      logIds: body.logIds,
+      automationId: body.logIds?.length ? null : (body.automationId ?? null),
+    });
+    return NextResponse.json({ ok: true, cleared });
   }
 
   if (body.action === "send") {

@@ -33,6 +33,13 @@ const PERMANENT_ERRORS = [
 /** Marks rows this feature created or resolved, for provenance in the sheet. */
 export const RECOVERED_NOTE = "recovered after database restore";
 
+/**
+ * Written when someone clears a warning by hand, having answered the person
+ * themselves or judged the DM no longer worth sending. Distinct from the
+ * automatic skip reasons so the sheet can say who decided.
+ */
+export const DISMISSED_NOTE = "marked as already handled";
+
 export function isPermanentError(error: string | null): boolean {
   if (!error) return false;
   return PERMANENT_ERRORS.some((pattern) => pattern.test(error));
@@ -431,6 +438,38 @@ export async function queueRows(
     .in("id", ids)
     .eq("status", "failed")
     .select("id");
+  return ((data ?? []) as unknown[]).length;
+}
+
+/**
+ * Resolve rows without sending anything, for people who were answered by hand
+ * or no longer need a DM. They become `skipped` so every count stays honest and
+ * the warning clears, rather than being deleted or left to expire silently.
+ */
+export async function dismissRows(
+  db: SupabaseClient,
+  accountId: string,
+  options: { logIds?: string[]; automationId?: string | null },
+): Promise<number> {
+  let query = db
+    .from("automation_logs")
+    .update({
+      status: "skipped",
+      error: DISMISSED_NOTE,
+      retry_queued_at: null,
+    })
+    .eq("account_id", accountId)
+    .eq("status", "failed");
+
+  if (options.logIds?.length) {
+    query = query.in("id", options.logIds.slice(0, 1000));
+  } else if (options.automationId) {
+    query = query.eq("automation_id", options.automationId);
+  } else {
+    return 0;
+  }
+
+  const { data } = await query.select("id");
   return ((data ?? []) as unknown[]).length;
 }
 

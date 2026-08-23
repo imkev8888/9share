@@ -207,6 +207,14 @@ export const StopIcon = (p: SVGProps<SVGSVGElement>) => (
   </svg>
 );
 
+/** "Resolved" — deliberately distinct from the bare check used for "sent". */
+export const CheckCircleIcon = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base} {...p}>
+    <path d="M21.8 11.1V12a10 10 0 1 1-5.9-9.1" />
+    <polyline points="22 4 12 14.01 9 11.01" />
+  </svg>
+);
+
 export const CloseIcon = (p: SVGProps<SVGSVGElement>) => (
   <svg {...base} {...p}>
     <line x1="18" y1="6" x2="6" y2="18" />

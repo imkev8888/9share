@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { MediaThumb } from "@/components/media-thumb";
 import {
+  CheckCircleIcon,
   CheckIcon,
   ClockIcon,
   CloseIcon,
@@ -40,7 +41,14 @@ interface Payload {
  */
 const STALLED_AFTER_MS = 10 * 60 * 1000;
 
-type RowState = "idle" | "confirm" | "sending" | "sent" | "failed";
+type RowState =
+  | "idle"
+  | "confirm"
+  | "sending"
+  | "sent"
+  | "failed"
+  /** Resolved by hand rather than by sending. */
+  | "cleared";
 type Notice = { tone: "ok" | "warn"; text: string } | null;
 
 /**
@@ -72,8 +80,11 @@ export function FailedRecoveryDialog({
   const [mounted, setMounted] = useState(false);
   const [data, setData] = useState<Payload | null>(null);
   const [rowState, setRowState] = useState<Record<string, RowState>>({});
-  const [busy, setBusy] = useState<null | "refresh" | "queue" | "stop">(null);
+  const [busy, setBusy] = useState<
+    null | "refresh" | "queue" | "stop" | "clear"
+  >(null);
   const [confirmAll, setConfirmAll] = useState(false);
+  const [confirmClear, setConfirmClear] = useState(false);
   const [notice, setNotice] = useState<Notice>(null);
   const panel = useRef<HTMLDivElement>(null);
   /** Queue size when the current batch started, so progress has a denominator. */
@@ -161,6 +172,43 @@ export function FailedRecoveryDialog({
     }
   }
 
+  /** Clear one warning without sending: this person was already looked after. */
+  async function dismissOne(row: Row) {
+    setNotice(null);
+    const who = `@${row.username ?? "them"}`;
+    try {
+      await post({ action: "dismiss", logIds: [row.id] });
+      setRowState((s) => ({ ...s, [row.id]: "cleared" }));
+      setNotice({ tone: "ok", text: `${who} marked as handled. Nothing sent.` });
+    } catch (err) {
+      setNotice({
+        tone: "warn",
+        text: err instanceof Error ? err.message : "Couldn't clear that one",
+      });
+    }
+  }
+
+  async function dismissAll() {
+    setBusy("clear");
+    setConfirmClear(false);
+    setNotice(null);
+    try {
+      const result = await post({ action: "dismiss", automationId });
+      await load();
+      setNotice({
+        tone: "ok",
+        text: `${result.cleared ?? 0} marked as handled. Nothing was sent.`,
+      });
+    } catch (err) {
+      setNotice({
+        tone: "warn",
+        text: err instanceof Error ? err.message : "Couldn't clear the warning",
+      });
+    } finally {
+      setBusy(null);
+    }
+  }
+
   async function queueAll(count: number) {
     setBusy("queue");
     setConfirmAll(false);
@@ -224,7 +272,9 @@ export function FailedRecoveryDialog({
   }
 
   const rows = data?.rows ?? [];
-  const pendingRows = rows.filter((row) => rowState[row.id] !== "sent");
+  const resolved = (id: string) =>
+    rowState[id] === "sent" || rowState[id] === "cleared";
+  const pendingRows = rows.filter((row) => !resolved(row.id));
   const pending = pendingRows.length;
   const soonest = pendingRows.reduce<string | null>(
     (min, row) => (!min || row.expiresAt < min ? row.expiresAt : min),
@@ -378,7 +428,7 @@ export function FailedRecoveryDialog({
                 <div
                   key={row.id}
                   className={`flex items-center gap-2 px-3 py-2.5 sm:gap-3 sm:px-4 ${
-                    state === "sent" ? "opacity-55" : ""
+                    resolved(row.id) ? "opacity-55" : ""
                   }`}
                 >
                   <div className="min-w-0 flex-1">
@@ -390,13 +440,19 @@ export function FailedRecoveryDialog({
                     </p>
                   </div>
 
-                  {state === "sent" ? (
+                  {state === "sent" || state === "cleared" ? (
                     <span
                       className="inline-flex h-11 w-11 shrink-0 items-center justify-center text-cyan-600 sm:h-9 sm:w-9"
-                      title="Done"
-                      aria-label="Done"
+                      title={state === "sent" ? "DM sent" : "Marked as handled"}
+                      aria-label={
+                        state === "sent" ? "DM sent" : "Marked as handled"
+                      }
                     >
-                      <CheckIcon className="h-5 w-5" />
+                      {state === "sent" ? (
+                        <CheckIcon className="h-5 w-5" />
+                      ) : (
+                        <CheckCircleIcon className="h-5 w-5" />
+                      )}
                     </span>
                   ) : state === "confirm" ? (
                     <div className="flex shrink-0 items-center gap-1">
@@ -435,6 +491,15 @@ export function FailedRecoveryDialog({
                           <ClockIcon className="h-4 w-4" />
                         </span>
                       )}
+                      <button
+                        type="button"
+                        onClick={() => void dismissOne(row)}
+                        title={`Already handled @${row.username ?? "them"} — clear without sending`}
+                        aria-label={`Already handled @${row.username ?? "them"} — clear without sending`}
+                        className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-ink-soft transition-colors hover:bg-white/70 hover:text-cyan-700 cursor-pointer sm:h-9 sm:w-9"
+                      >
+                        <CheckCircleIcon className="h-4 w-4" />
+                      </button>
                       <button
                         type="button"
                         onClick={() =>
@@ -532,18 +597,58 @@ export function FailedRecoveryDialog({
                   No
                 </button>
               </div>
+            ) : confirmClear ? (
+              <div className="flex items-center gap-2">
+                <p className="min-w-0 flex-1 text-xs font-bold text-ink">
+                  Clear the warning on {pending} without sending?
+                </p>
+                <button
+                  type="button"
+                  onClick={() => void dismissAll()}
+                  disabled={busy !== null}
+                  title="Yes, mark them all as handled"
+                  aria-label="Yes, mark them all as handled"
+                  className="inline-flex h-11 items-center gap-1.5 rounded-xl bg-ink px-4 text-sm font-extrabold text-white transition-opacity hover:opacity-90 disabled:opacity-60 cursor-pointer sm:h-9"
+                >
+                  <CheckIcon className="h-4 w-4" />
+                  Yes
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirmClear(false)}
+                  title="No, keep the warning"
+                  aria-label="No, keep the warning"
+                  className="inline-flex h-11 items-center gap-1.5 rounded-xl border border-brand-200 bg-white px-4 text-sm font-bold text-ink-soft transition-colors hover:bg-brand-50 cursor-pointer sm:h-9"
+                >
+                  <CloseIcon className="h-4 w-4" />
+                  No
+                </button>
+              </div>
             ) : (
-              <button
-                type="button"
-                onClick={() => setConfirmAll(true)}
-                disabled={busy !== null || !!halted}
-                title={`Send all ${pending}, paced at about one every three minutes`}
-                aria-label={`Send all ${pending}, paced at about one every three minutes`}
-                className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[var(--color-cyan-cta)] px-4 py-3 text-sm font-extrabold text-white transition-opacity hover:opacity-90 disabled:opacity-50 cursor-pointer sm:py-2.5"
-              >
-                <SendIcon className="h-4 w-4" />
-                Send all {pending}
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setConfirmAll(true)}
+                  disabled={busy !== null || !!halted}
+                  title={`Send all ${pending}, paced at about one every three minutes`}
+                  aria-label={`Send all ${pending}, paced at about one every three minutes`}
+                  className="inline-flex min-w-0 flex-1 items-center justify-center gap-2 rounded-xl bg-[var(--color-cyan-cta)] px-4 py-3 text-sm font-extrabold text-white transition-opacity hover:opacity-90 disabled:opacity-50 cursor-pointer sm:py-2.5"
+                >
+                  <SendIcon className="h-4 w-4" />
+                  Send all {pending}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirmClear(true)}
+                  disabled={busy !== null}
+                  title={`Already handled all ${pending} — clear the warning without sending`}
+                  aria-label={`Already handled all ${pending} — clear the warning without sending`}
+                  className="inline-flex h-[46px] shrink-0 items-center justify-center gap-1.5 rounded-xl border border-brand-200 bg-white px-3 text-xs font-bold text-ink-soft transition-colors hover:bg-brand-50 hover:text-ink disabled:opacity-50 cursor-pointer sm:h-[42px]"
+                >
+                  <CheckCircleIcon className="h-4 w-4" />
+                  Clear
+                </button>
+              </div>
             )}
           </div>
         )}
