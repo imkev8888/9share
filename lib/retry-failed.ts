@@ -5,6 +5,7 @@ import {
   getCommentReplies,
 } from "@/lib/instagram";
 import { loadPostState, looksLikeTemplate } from "@/lib/post-comment-state";
+import { privateReplyButton } from "@/lib/dm-media";
 import {
   fatalSendReason,
   isPermanentSendError,
@@ -184,6 +185,8 @@ export interface AutomationRow {
   ig_media_id: string | null;
   sent_count: number | null;
   is_active: boolean;
+  dm_attachments?: unknown;
+  dm_button_label?: string | null;
 }
 
 export interface AccountRow {
@@ -615,11 +618,14 @@ export async function sendOne(
   decision: Extract<Decision, { action: "send" }>,
 ): Promise<SendOutcome> {
   const { row, dm, reply } = decision;
+  // A recovered DM earns its media the same way a live one does, so it gets the
+  // same button.
   const result = await sendPrivateReply(
     account.ig_user_id,
     row.comment_id!,
     dm,
     account.access_token,
+    privateReplyButton(automation, dm),
   );
 
   if (!result.ok) {
@@ -663,6 +669,7 @@ export async function sendOne(
       status: "sent",
       error: null,
       dm_text: dm,
+      recipient_id: result.recipientId ?? null,
       public_reply_text: publicReplyText,
       public_reply_id: publicReplyId,
       retry_queued_at: null,

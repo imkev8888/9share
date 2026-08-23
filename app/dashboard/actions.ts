@@ -4,6 +4,11 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import {
+  parseAttachments,
+  rejectButtonLabel,
+  rejectDmForButton,
+} from "@/lib/dm-attachments";
 
 async function requireUser() {
   const supabase = await createClient();
@@ -96,6 +101,8 @@ export interface AutomationInput extends AutomationMediaInput {
   keyword?: string;
   dmMessage: string;
   publicReply?: string;
+  dmAttachments?: unknown;
+  dmButtonLabel?: string;
 }
 
 interface SharedCampaign {
@@ -103,6 +110,34 @@ interface SharedCampaign {
   keyword?: string;
   dmMessage: string;
   publicReply?: string;
+  dmAttachments?: unknown;
+  dmButtonLabel?: string;
+}
+
+/**
+ * The media and its button, sanitized. The browser checked these too, but the
+ * browser is not a gate: a label Meta truncates or a URL we did not upload
+ * would only surface as a broken DM days later.
+ */
+function mediaColumns(shared: SharedCampaign) {
+  const attachments = parseAttachments(shared.dmAttachments);
+  const label = cleanText(shared.dmButtonLabel);
+  return {
+    dm_attachments: attachments,
+    dm_button_label: attachments.length > 0 ? label || null : null,
+  };
+}
+
+/** Why this campaign's media and button cannot be saved, or null. */
+function rejectMedia(shared: SharedCampaign): string | null {
+  const attachments = parseAttachments(shared.dmAttachments);
+  const label = cleanText(shared.dmButtonLabel);
+  const labelProblem = rejectButtonLabel(label, attachments.length > 0);
+  if (labelProblem) return labelProblem;
+  if (attachments.length > 0) {
+    return rejectDmForButton(cleanText(shared.dmMessage));
+  }
+  return null;
 }
 
 /** Create/update one automation for a single post. Kept for backward compat. */
@@ -121,6 +156,8 @@ export async function createAutomation(input: AutomationInput) {
     keyword: input.keyword,
     dmMessage: input.dmMessage,
     publicReply: input.publicReply,
+    dmAttachments: input.dmAttachments,
+    dmButtonLabel: input.dmButtonLabel,
   });
 }
 
@@ -131,6 +168,8 @@ export interface CreateAutomationsInput {
   keyword?: string;
   dmMessage: string;
   publicReply?: string;
+  dmAttachments?: unknown;
+  dmButtonLabel?: string;
 }
 
 /**
@@ -146,6 +185,9 @@ export async function createAutomations(input: CreateAutomationsInput) {
   if (!input.media?.length) {
     return { error: "Pick at least one post or reel." };
   }
+
+  const mediaProblem = rejectMedia(input);
+  if (mediaProblem) return { error: mediaProblem };
 
   const { data: account } = await supabase
     .from("instagram_accounts")
@@ -163,6 +205,8 @@ export async function createAutomations(input: CreateAutomationsInput) {
     keyword: input.keyword,
     dmMessage: input.dmMessage,
     publicReply: input.publicReply,
+    dmAttachments: input.dmAttachments,
+    dmButtonLabel: input.dmButtonLabel,
   };
 
   let created = 0;
@@ -214,6 +258,7 @@ async function saveAutomation(
     keyword: nullableText(shared.keyword),
     dm_message: cleanText(shared.dmMessage),
     public_reply: nullableText(shared.publicReply),
+    ...mediaColumns(shared),
     is_active: true,
   };
 
@@ -287,6 +332,8 @@ export interface CreateCampaignInput {
   keyword?: string;
   dmMessage: string;
   publicReply?: string;
+  dmAttachments?: unknown;
+  dmButtonLabel?: string;
   instagram?: { accountId: string; media: AutomationMediaInput[] };
   facebook?: { posts: FacebookPostInput[] };
 }
@@ -308,11 +355,16 @@ export async function createCampaign(input: CreateCampaignInput) {
     return { error: "Pick at least one post." };
   }
 
+  const mediaProblem = rejectMedia(input);
+  if (mediaProblem) return { error: mediaProblem };
+
   const shared: SharedCampaign = {
     name: input.name,
     keyword: input.keyword,
     dmMessage: input.dmMessage,
     publicReply: input.publicReply,
+    dmAttachments: input.dmAttachments,
+    dmButtonLabel: input.dmButtonLabel,
   };
 
   let created = 0;
@@ -410,6 +462,7 @@ async function saveFacebookAutomation(
     keyword: nullableText(shared.keyword),
     dm_message: cleanText(shared.dmMessage),
     public_reply: nullableText(shared.publicReply),
+    ...mediaColumns(shared),
     is_active: true,
   };
 
@@ -441,11 +494,14 @@ export interface UpdateAutomationInput {
   keyword?: string;
   dmMessage: string;
   publicReply?: string;
+  dmAttachments?: unknown;
+  dmButtonLabel?: string;
 }
 
 /**
- * Edit an automation's campaign content (name, keyword, DM, public reply).
- * Allowed at any time — including while the automation is active.
+ * Edit an automation's campaign content (name, keyword, DM, public reply,
+ * media and its button). Allowed at any time — including while the automation
+ * is active.
  */
 export async function updateAutomation(input: UpdateAutomationInput) {
   const { supabase, user } = await requireUser();
@@ -454,6 +510,9 @@ export async function updateAutomation(input: UpdateAutomationInput) {
     return { error: "DM message is required." };
   }
 
+  const mediaProblem = rejectMedia(input);
+  if (mediaProblem) return { error: mediaProblem };
+
   const { error } = await supabase
     .from("automations")
     .update({
@@ -461,6 +520,7 @@ export async function updateAutomation(input: UpdateAutomationInput) {
       keyword: nullableText(input.keyword),
       dm_message: cleanText(input.dmMessage),
       public_reply: nullableText(input.publicReply),
+      ...mediaColumns(input),
     })
     .eq("id", input.id)
     .eq("user_id", user.id);
