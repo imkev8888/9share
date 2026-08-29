@@ -9,6 +9,7 @@ import {
   rejectButtonLabel,
   rejectDmForButton,
 } from "@/lib/dm-attachments";
+import { truncateText } from "@/lib/truncate";
 
 async function requireUser() {
   const supabase = await createClient();
@@ -560,7 +561,7 @@ function cleanText(value: string | null | undefined) {
 function captionToName(caption: string | null | undefined) {
   const text = (caption ?? "").replace(/\s+/g, " ").trim();
   if (!text) return "Untitled campaign";
-  return text.length > 40 ? `${text.slice(0, 40)}…` : text;
+  return truncateText(text, 40);
 }
 
 function nullableText(value: string | null | undefined) {

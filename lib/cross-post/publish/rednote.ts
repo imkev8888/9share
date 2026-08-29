@@ -3,6 +3,7 @@
  */
 
 import { publishContent, publishWithVideo } from "../mcp/xhs";
+import { truncateText } from "@/lib/truncate";
 import type { CrossPostInput, PublishContext, PublishResult } from "../types";
 
 function imageUrls(input: CrossPostInput): string[] {
@@ -34,7 +35,7 @@ export async function publishToRedNote(
     if (!video) return { ok: false, error: "Video post missing video URL" };
     await onProgress?.(30);
     const res = await publishWithVideo({
-      title: title || content.slice(0, 20),
+      title: title || truncateText(content, 20, ""),
       content,
       tags,
       video,
@@ -56,7 +57,7 @@ export async function publishToRedNote(
 
   await onProgress?.(30);
   const res = await publishContent({
-    title: title || content.slice(0, 20),
+    title: title || truncateText(content, 20, ""),
     content,
     tags,
     images,
