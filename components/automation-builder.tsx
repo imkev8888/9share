@@ -15,6 +15,7 @@ import {
 } from "@/components/icons";
 import { MediaThumb } from "@/components/media-thumb";
 import { DmAttachmentsField } from "@/components/dm-attachments-field";
+import { truncateText } from "@/lib/truncate";
 import {
   rejectButtonLabel,
   rejectDmForButton,
@@ -802,7 +803,7 @@ function ChannelTab({
 
 function formatCampaignName(item: PickerItem) {
   const caption = item.caption?.replace(/\s+/g, " ").trim();
-  if (caption) return caption.length > 40 ? `${caption.slice(0, 40)}…` : caption;
+  if (caption) return truncateText(caption, 40);
 
   const type =
     item.productType === "REELS"

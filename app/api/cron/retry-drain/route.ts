@@ -20,6 +20,7 @@ import {
   type AutomationRow,
   type FailedRow,
 } from "@/lib/retry-failed";
+import { truncateText } from "@/lib/truncate";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -110,7 +111,7 @@ async function sweep(
         apply,
       });
       posts.push({
-        name: automation.name.slice(0, 40),
+        name: truncateText(automation.name, 40),
         failedRows: rows.length,
         sendable: pass.sendable.filter((d) => d.action === "send").length,
         skipped: pass.skipped,
